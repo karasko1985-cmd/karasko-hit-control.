@@ -2,109 +2,35 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { fileURLToPath } from 'node:url';
-
-const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const PUBLIC = ROOT;
-const ALLOWED_STATIC = new Set(['index.html','app.js','style.css']);
-for (const line of (fs.existsSync(path.join(ROOT,'.env')) ? fs.readFileSync(path.join(ROOT,'.env'),'utf8') : '').split(/\r?\n/)) {
-  const match = line.match(/^([A-Z_]+)=(.*)$/);
-  if (match && !process.env[match[1]]) process.env[match[1]] = match[2].trim();
-}
-const PORT = Number(process.env.PORT || 3000);
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4.1';
-const MAX_CALLS = Math.max(2, Math.min(8, Number(process.env.MAX_AI_CALLS || 6)));
-const LIMIT = 250_000;
-const history = [];
-const active = new Set();
-const perIp = new Map();
-
-function json(res, status, body) { res.writeHead(status, {'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}); res.end(JSON.stringify(body)); }
-function basicAuth(req) {
-  const pw = process.env.APP_PASSWORD;
-  if (!pw) return true;
-  const raw = (req.headers.authorization || '').replace(/^Basic\s+/i, '');
-  let candidate = '';
-  try { candidate = Buffer.from(raw, 'base64').toString('utf8').split(':').slice(1).join(':'); } catch {}
-  const a = Buffer.from(candidate), b = Buffer.from(pw);
-  return a.length === b.length && crypto.timingSafeEqual(a,b);
-}
-function clean(v, max=300) { return String(v || '').trim().slice(0,max); }
-function score(v) { const n=Number(v); return Number.isFinite(n) ? Math.max(0,Math.min(10,n)) : 0; }
-function normalizeSong(raw) {
-  return {title:clean(raw.title,100), concept:clean(raw.concept,600), lyrics:clean(raw.lyrics,18000), style:clean(raw.style,900), exclude:clean(raw.exclude,350), hook:clean(raw.hook,600)};
-}
-function normalizeReview(raw) {
-  const s=raw.scores||{};
-  const scores=Object.fromEntries(['rhymes','flow','naturalness','hook','story','originality'].map(k=>[k,score(s[k])]));
-  return {scores, issues:Array.isArray(raw.issues)?raw.issues.slice(0,10).map(x=>clean(x,450)):[], fixes:Array.isArray(raw.fixes)?raw.fixes.slice(0,10).map(x=>clean(x,450)):[], verdict:clean(raw.verdict,900), passed:Object.values(scores).every(v=>v>=9)};
-}
-async function ai(messages, usage) {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method:'POST', headers:{'Authorization':`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
-    body:JSON.stringify({model:MODEL,temperature:0.75,response_format:{type:'json_object'},messages,max_completion_tokens:5000}),
-    signal:AbortSignal.timeout(110000)
-  });
-  const data=await response.json().catch(()=>({}));
-  if (!response.ok) throw new Error(`API ${response.status}: ${clean(data.error?.message || 'Błąd odpowiedzi',300)}`);
-  usage.input += Number(data.usage?.prompt_tokens||0); usage.output += Number(data.usage?.completion_tokens||0); usage.calls++;
-  const txt=data.choices?.[0]?.message?.content;
-  if (!txt) throw new Error('Model nie zwrócił treści.');
-  try { return JSON.parse(txt); } catch { throw new Error('Model zwrócił niepoprawny JSON.'); }
-}
-const artistRules = `Jesteś polskim tekściarzem rapowym i redaktorem muzycznym. Projekt KARASKO. Pisz po polsku, naturalnie, bez sztucznych metafor i moralizowania. Oryginalna historia, konkretne sceny, wiarygodne postaci. Mocne sensowne rymy, w tym wielosylabowe tam gdzie naturalne; nie poświęcaj sensu dla rymu. Równy, możliwy do zarapowania flow; unikaj rozwlekłych wersów. Mocny krótki refren zaczyna się w 0:00, chwytliwy w pierwszych 3–5 sekundach. Minimum 3 zwrotki po 12–16 wersów, 2–3 refreny, bridge, outro. Używaj tagów [Chorus], [Verse 1], [Verse 2], [Verse 3], [Bridge], [Final Chorus], [Outro]. Wokal naturalny niski męski; bez disco polo, bez krzyku, bez plastikowego autotune. Bit dynamiczny, ciężki 808, przerwy i mocniejszy finalny drop. Nie powtarzaj znanych motywów o udowadnianiu innym, czasie, pieniądzach i zegarku, chyba że temat tego wymaga. Nie kopiuj cudzych tekstów ani melodii.`;
-const rubric = `Oceń surowo 0–10 OSOBNO: rhymes (rzeczywiste i naturalne rymy), flow (metryka i akcenty, realistyczny rap przy BPM), naturalness (żywy polski język), hook (zapamiętywalność refrenu), story (spójność i rozwój historii), originality (brak klisz). Dodatkowo zweryfikuj, czy styl muzyczny i tempo odpowiadają historii, emocjom, wokalowi i akcentom w tekście; opisz niespójności w issues. Nie przyznawaj 9 za samą długość. Wskaż konkretne wersy i problemy. Każda kategoria >=9 to próg, ale ocena jest szacunkiem redakcyjnym, nie obiektywnym pomiarem.`;
-async function build(payload) {
-  const usage={input:0,output:0,calls:0};
-  const genre=clean(payload.genre,80)||'Polski uliczny hip-hop';
-  const topic=clean(payload.topic,450);
-  const mood=clean(payload.mood,120)||'mocny, wiarygodny, energetyczny';
-  const bpm=Math.max(75,Math.min(160,Number(payload.bpm)||96));
-  const auto=payload.autoMatch!==false && payload.autoMatch!=='false';
-  let direction=null;
-  if(auto){
-    direction=await ai([{role:'system',content:`Jesteś producentem muzycznym i redaktorem Karasko. Dobierasz TEMAT, tytuł, gatunek, tempo, nastrój, wokal i aranżację jako spójny pakiet. Wybierz kierunek z największym potencjałem na naturalny polski tekst i wyrazisty refren. Nie kopiuj cudzych utworów. Unikaj disco polo, krzyku, banalnych motywów i słabych rymów. Zwróć wyłącznie JSON: {"genre":"...","bpm":96,"mood":"...","topic":"...","vocal":"...","production":"...","why":"..."}. BPM 80–150. Jeśli użytkownik podał temat, zachowaj go, dobierając odpowiedni styl.`},{role:'user',content:JSON.stringify({topic:topic||null,preferences:'rap uliczny / klubowe electro / energetyczne melodyjne, refren od 0:00, niski męski wokal'})}],usage);
-    direction={genre:clean(direction.genre,90),bpm:Math.max(80,Math.min(150,Number(direction.bpm)||96)),mood:clean(direction.mood,120),topic:clean(direction.topic,450),vocal:clean(direction.vocal,180),production:clean(direction.production,500),why:clean(direction.why,500)};
-  }
-  const instructions=`Gatunek: ${auto?direction.genre:genre}; BPM: ${auto?direction.bpm:bpm}; klimat: ${auto?direction.mood:mood}; temat lub wskazówki: ${auto?direction.topic:(topic||'Wymyśl świeży, konkretny temat i tytuł, inne niż oklepane motywy')}. ${auto?`Dobór producenta: wokal ${direction.vocal}; aranżacja ${direction.production}. Zachowaj ścisłą zgodność słów, tempa, emocji i Style. Nie zmieniaj wybranego kierunku w trakcie redakcji.`:''} Przygotuj kompletny gotowy numer. Zwróć JSON: {"title":"...","concept":"...","hook":"...","lyrics":"...","style":"...","exclude":"..."}. Style i Exclude po angielsku, Lyrics po polsku.`;
-  let song=normalizeSong(await ai([{role:'system',content:artistRules},{role:'user',content:instructions}],usage));
-  let review=null;
-  const revisions=[];
-  while (usage.calls < MAX_CALLS) {
-    review=normalizeReview(await ai([{role:'system',content:`Jesteś niezależnym, surowym redaktorem rapowym. ${rubric} Zwróć tylko JSON: {"scores":{"rhymes":0,"flow":0,"naturalness":0,"hook":0,"story":0,"originality":0},"issues":["..."],"fixes":["..."],"verdict":"..."}.`},{role:'user',content:JSON.stringify({bpm:auto?direction.bpm:bpm,direction,song})}],usage));
-    revisions.push({iteration:revisions.length+1,scores:review.scores,issues:review.issues});
-    if (review.passed || usage.calls >= MAX_CALLS-1) break;
-    song=normalizeSong(await ai([{role:'system',content:artistRules+' Jesteś teraz redaktorem: przepisz CAŁY utwór i popraw wykazane błędy, nie dopisuj wyjaśnień.'},{role:'user',content:JSON.stringify({originalInstructions:instructions,song,review,outputFormat:{title:'',concept:'',hook:'',lyrics:'',style:'',exclude:''}})}],usage));
-  }
-  const rates={input:Number(process.env.INPUT_USD_PER_M||0),output:Number(process.env.OUTPUT_USD_PER_M||0)};
-  const estimatedUsd=(usage.input*rates.input+usage.output*rates.output)/1e6;
-  return {song,direction,review,revisions,usage,estimatedUsd:rates.input||rates.output?estimatedUsd:null,model:MODEL,createdAt:new Date().toISOString()};
-}
-const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'};
-const server=http.createServer(async (req,res)=>{
-  if (!basicAuth(req)) {res.writeHead(401,{'WWW-Authenticate':'Basic realm="Karasko Hit Control"'});res.end('Wymagane hasło');return;}
-  const pathname=new URL(req.url,'http://localhost').pathname;
-  if (pathname==='/api/status') return json(res,200,{configured:!!process.env.OPENAI_API_KEY,model:MODEL,maxCalls:MAX_CALLS,hasPassword:!!process.env.APP_PASSWORD});
-  if (pathname==='/api/history' && req.method==='GET') return json(res,200,{items:history.map(({song,review,createdAt})=>({title:song.title,scores:review.scores,createdAt}))});
-  if (pathname==='/api/generate' && req.method==='POST') {
-    if (!process.env.OPENAI_API_KEY) return json(res,503,{error:'Brak OPENAI_API_KEY. Ustaw go w .env lub panelu hostingu.'});
-    const ip=req.socket.remoteAddress||'unknown';
-    const last=perIp.get(ip)||0;
-    if (Date.now()-last<15000) return json(res,429,{error:'Odczekaj 15 sekund przed kolejną generacją.'});
-    if (active.size>=2) return json(res,429,{error:'Dwie generacje już trwają. Spróbuj później.'});
-    perIp.set(ip,Date.now()); active.add(ip);
-    try {
-      let body=''; for await (const chunk of req) {body+=chunk; if (body.length>LIMIT) throw new Error('Za duże żądanie.');}
-      const payload=JSON.parse(body);
-      const result=await build(payload);
-      history.unshift(result); if(history.length>15) history.pop();
-      return json(res,200,result);
-    } catch(err) {return json(res,500,{error:clean(err.message,500)});} finally {active.delete(ip);}
-  }
-  if (req.method!=='GET' && req.method!=='HEAD') return json(res,405,{error:'Metoda niedozwolona'});
-  const file=pathname==='/'?'index.html':pathname.replace(/^\//,'');
-  if (!ALLOWED_STATIC.has(file)) return json(res,404,{error:'Nie znaleziono'});
-  const resolved=path.join(PUBLIC,file);
-  try {const data=fs.readFileSync(resolved);res.writeHead(200,{'content-type':mime[path.extname(file)]||'application/octet-stream','x-content-type-options':'nosniff','cache-control':'no-cache'});res.end(data);} catch {json(res,404,{error:'Nie znaleziono'});}
-});
-server.listen(PORT,'0.0.0.0',()=>console.log(`KARASKO HIT CONTROL: http://localhost:${PORT}`));
+import {fileURLToPath} from 'node:url';
+const root=path.dirname(fileURLToPath(import.meta.url));
+const port=Number(process.env.PORT||3000);
+const model=process.env.OPENAI_MODEL||'gpt-4.1';
+const budget=1;
+// Conservative estimated prices, USD / million tokens. Update to match your model's actual API pricing.
+const inRate=Number(process.env.INPUT_USD_PER_M||4);
+const outRate=Number(process.env.OUTPUT_USD_PER_M||16);
+const MAX_OUTPUT=3200, MAX_STEPS=6;
+const staticFiles={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/style.css':'style.css'};
+const jobs=new Set();const lastByIp=new Map();
+function json(res,status,value){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));}
+function auth(req,res){const password=process.env.APP_PASSWORD;if(!password)return true;const encoded=(req.headers.authorization||'').replace(/^Basic\s+/i,'');let supplied='';try{supplied=Buffer.from(encoded,'base64').toString().split(':').slice(1).join(':')}catch{}const a=Buffer.from(supplied),b=Buffer.from(password);if(a.length===b.length&&crypto.timingSafeEqual(a,b))return true;res.writeHead(401,{'WWW-Authenticate':'Basic realm="KARASKO"'});res.end('Wymagane hasło');return false;}
+function str(x,n=600){return String(x??'').trim().slice(0,n)}
+function estimateTokens(s){return Math.ceil(String(s).length/2.3)+100} // deliberately conservative for Polish
+function estimateCost(input,output){return (input*inRate+output*outRate)/1e6}
+if(!Number.isFinite(inRate)||!Number.isFinite(outRate)||inRate<=0||outRate<=0)throw Error('Ustaw poprawne stawki INPUT_USD_PER_M i OUTPUT_USD_PER_M');
+function scores(r){return ['rhymes','flow','naturalness','hook','story','originality'].map(k=>Number(r?.scores?.[k]||0))}
+function quality(r){const a=scores(r);return a.reduce((x,y)=>x+y,0)/a.length}
+function normalizeSong(s){return {title:str(s?.title,120),bpm:Math.min(160,Math.max(75,Number(s?.bpm)||100)),style:str(s?.style,1200),exclude:str(s?.exclude,500),lyrics:str(s?.lyrics,20000),concept:str(s?.concept,500)}}
+function normalizeReview(r){const out={scores:{},issues:Array.isArray(r?.issues)?r.issues.map(x=>str(x,300)).slice(0,8):[],fixes:Array.isArray(r?.fixes)?r.fixes.map(x=>str(x,300)).slice(0,8):[],verdict:str(r?.verdict,700)};for(const k of ['rhymes','flow','naturalness','hook','story','originality'])out.scores[k]=Math.max(0,Math.min(10,Number(r?.scores?.[k])||0));return out}
+async function searchSources(topic){const sources=[];const terms=[`polski hip hop rap playlist 2026 ${topic}`,`YouTube Music Polska rap nowości ${topic}`,`TikTok Polska viral muzyka rap ${topic}`];if(process.env.BRAVE_SEARCH_API_KEY){for(const q of terms){try{const u='https://api.search.brave.com/res/v1/web/search?'+new URLSearchParams({q,count:'4'});const r=await fetch(u,{headers:{'X-Subscription-Token':process.env.BRAVE_SEARCH_API_KEY,'Accept':'application/json'},signal:AbortSignal.timeout(9000)});if(!r.ok)continue;const d=await r.json();for(const x of d.web?.results||[]){if(/^https:\/\//.test(x.url))sources.push({title:str(x.title,180),url:x.url,summary:str(x.description,450),platform:new URL(x.url).hostname})}}catch{}}}
+if(process.env.YOUTUBE_API_KEY){try{const q=`polski rap hip hop playlist 2026 ${topic}`;const u='https://www.googleapis.com/youtube/v3/search?'+new URLSearchParams({part:'snippet',type:'video,playlist',maxResults:'6',q,key:process.env.YOUTUBE_API_KEY});const r=await fetch(u,{signal:AbortSignal.timeout(9000)});if(r.ok){const d=await r.json();for(const x of d.items||[]){const id=x.id?.videoId||x.id?.playlistId;if(!id)continue;sources.push({title:str(x.snippet?.title,180),url:x.id.videoId?`https://www.youtube.com/watch?v=${id}`:`https://www.youtube.com/playlist?list=${id}`,summary:str(x.snippet?.description,450),platform:'YouTube'})}}}catch{}}
+return sources.filter((x,i,a)=>a.findIndex(y=>y.url===x.url)===i).slice(0,14)}
+async function ask(system,user,usage){const input=estimateTokens(system+user);const projected=estimateCost(usage.input+input,usage.output+MAX_OUTPUT);if(projected>budget*.9)throw new Error('Zatrzymano przed kolejnym wywołaniem: szacowany koszt mógłby przekroczyć bezpieczny limit.');const response=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Authorization':`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model,messages:[{role:'system',content:system},{role:'user',content:user}],response_format:{type:'json_object'},max_completion_tokens:MAX_OUTPUT}),signal:AbortSignal.timeout(115000)});const d=await response.json().catch(()=>({}));if(!response.ok)throw new Error('OpenAI: '+str(d.error?.message||`HTTP ${response.status}`,300));usage.input+=Number(d.usage?.prompt_tokens||input);usage.output+=Number(d.usage?.completion_tokens||MAX_OUTPUT);usage.calls++;try{return JSON.parse(d.choices[0].message.content)}catch{throw new Error('Model zwrócił niepoprawną odpowiedź JSON.')}}
+const author='Jesteś profesjonalnym polskim autorem tekstów i producentem KARASKO. Stwórz oryginalny pełny utwór: mocny krótki refren od 0:00, chwytliwy hook 3–5 sekund, 3 zwrotki, bridge, finał. Naturalny niski męski wokal, konkretne sceny, świetne polskie rymy, płynny flow i sensowna opowieść. Bez disco polo, krzyku, plastikowego wokalu, banałów i kopiowania cudzych tekstów lub melodii. Sam dobierz BPM i Style do tematu. Mocny zróżnicowany bas, pauzy przed dropami, finał mocniejszy od zwrotki. Odpowiedz wyłącznie JSON {"title":"","bpm":100,"concept":"","style":"","exclude":"","lyrics":""}. Lyrics po polsku z tagami Suno; Style i Exclude po angielsku.';
+const critic='Jesteś wymagającym redaktorem polskiego rapu. Oceniaj realnie, nie zawyżaj ocen. Sprawdź dokładne pary rymów, akcenty i długość wersów, siłę refrenu, historię i oryginalność. Odpowiedz JSON {"scores":{"rhymes":0,"flow":0,"naturalness":0,"hook":0,"story":0,"originality":0},"issues":["konkretne cytaty problematycznych wersów"],"fixes":["konkretne poprawki"],"verdict":""}. Oceny 0–10.';
+async function generate(topic){const sources=await searchSources(topic);const usage={input:0,output:0,calls:0};const research=sources.length?JSON.stringify(sources.map(({title,summary,platform})=>({title,summary,platform}))).slice(0,7000):'Brak zweryfikowanych źródeł. Nie udawaj analizy internetu.';
+let song=normalizeSong(await ask(author,`Temat: ${topic||'Wybierz świeżą oryginalną historię'}. Inspiracje: ${research}. Analizuj wyłącznie ogólne techniki produkcyjne i tekstowe, nie kopiuj.`,usage));let review=null;let best=null;const revisions=[];
+for(let step=0;step<MAX_STEPS-1;step++){try{review=normalizeReview(await ask(critic,JSON.stringify({song}),usage));revisions.push({scores:review.scores,issues:review.issues});if(!best||quality(review)>quality(best.review))best={song,review};if(Math.min(...scores(review))>=9||step>=MAX_STEPS-2)break;const revised=await ask(author+' Zachowaj dobre wersy i oryginalną historię; popraw tylko wskazane słabości. W szczególności popraw dokładne pary rymów i akcenty. Odpowiedz pełnym JSON utworu.',JSON.stringify({song,review}),usage);song=normalizeSong(revised)}catch(e){if(best)break;throw e}}
+if(!best)throw new Error('Nie udało się przeprowadzić oceny w budżecie.');const total=estimateCost(usage.input,usage.output);return {...best,sources,researchStatus:sources.length?'Znaleziono źródła publiczne; bez analizy surowego audio.':'Brak dostępu do wyszukiwarki — wynik bez analizy internetu.',usage,estimatedUsd:total,budgetUsd:budget,revisions,model};}
+const server=http.createServer(async(req,res)=>{if(!auth(req,res))return;const url=new URL(req.url,'http://localhost');if(url.pathname==='/api/status')return json(res,200,{configured:!!process.env.OPENAI_API_KEY,model,budgetUsd:budget,research:!!(process.env.BRAVE_SEARCH_API_KEY||process.env.YOUTUBE_API_KEY)});if(url.pathname==='/api/generate'&&req.method==='POST'){if(!process.env.OPENAI_API_KEY)return json(res,503,{error:'Brak OPENAI_API_KEY w Render Environment'});const ip=req.socket.remoteAddress||'unknown';if(jobs.size>=1)return json(res,429,{error:'Inna generacja trwa'});if(Date.now()-(lastByIp.get(ip)||0)<15000)return json(res,429,{error:'Odczekaj 15 sekund'});jobs.add(ip);lastByIp.set(ip,Date.now());try{let raw='';for await(const part of req){raw+=part;if(raw.length>12000)throw Error('Za duże żądanie')}const parsed=JSON.parse(raw);if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw Error('Niepoprawne dane');return json(res,200,await generate(str(parsed.topic,450)))}catch(e){return json(res,500,{error:str(e.message,500)})}finally{jobs.delete(ip)}}if(req.method!=='GET'&&! (req.method==='HEAD'))return json(res,405,{error:'Niedozwolona metoda'});const file=staticFiles[url.pathname];if(!file)return json(res,404,{error:'Nie znaleziono'});try{const data=fs.readFileSync(path.join(root,file));res.writeHead(200,{'Content-Type':file.endsWith('.js')?'text/javascript; charset=utf-8':file.endsWith('.css')?'text/css; charset=utf-8':'text/html; charset=utf-8','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff'});res.end(data)}catch{json(res,404,{error:'Brak pliku'})}});server.listen(port,'0.0.0.0',()=>console.log(`KARASKO 2.0 on ${port}`));
