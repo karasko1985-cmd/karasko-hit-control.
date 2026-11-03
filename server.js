@@ -5,7 +5,8 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const PUBLIC = path.join(ROOT, 'public');
+const PUBLIC = ROOT;
+const ALLOWED_STATIC = new Set(['index.html','app.js','style.css']);
 for (const line of (fs.existsSync(path.join(ROOT,'.env')) ? fs.readFileSync(path.join(ROOT,'.env'),'utf8') : '').split(/\r?\n/)) {
   const match = line.match(/^([A-Z_]+)=(.*)$/);
   if (match && !process.env[match[1]]) process.env[match[1]] = match[2].trim();
@@ -102,8 +103,8 @@ const server=http.createServer(async (req,res)=>{
   }
   if (req.method!=='GET' && req.method!=='HEAD') return json(res,405,{error:'Metoda niedozwolona'});
   const file=pathname==='/'?'index.html':pathname.replace(/^\//,'');
-  const resolved=path.resolve(PUBLIC,file);
-  if (!resolved.startsWith(PUBLIC+path.sep)) return json(res,403,{error:'Brak dostępu'});
+  if (!ALLOWED_STATIC.has(file)) return json(res,404,{error:'Nie znaleziono'});
+  const resolved=path.join(PUBLIC,file);
   try {const data=fs.readFileSync(resolved);res.writeHead(200,{'content-type':mime[path.extname(file)]||'application/octet-stream','x-content-type-options':'nosniff','cache-control':'no-cache'});res.end(data);} catch {json(res,404,{error:'Nie znaleziono'});}
 });
 server.listen(PORT,'0.0.0.0',()=>console.log(`KARASKO HIT CONTROL: http://localhost:${PORT}`));

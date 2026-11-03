@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: karasko-hit-control
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/status
+    envVars:
+      - key: NODE_VERSION
+        value: 22.16.0
+      - key: OPENAI_MODEL
+        value: gpt-4.1
+      - key: MAX_AI_CALLS
+        value: "6"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
