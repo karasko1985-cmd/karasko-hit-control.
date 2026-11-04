@@ -103,6 +103,88 @@ test('network and timeout errors are normalized and still consume a call', async
   }
 });
 
+function failedFetch(code, message = 'fetch failed') {
+  const error = new TypeError(message);
+  error.cause = Object.assign(new Error(code), { code });
+  return error;
+}
+
+test('undici timeout cause codes map to the timeout message and logs omit the API key', async () => {
+  const logs = [];
+  const original = console.error;
+  console.error = (...args) => { logs.push(args.join(' ')); };
+  try {
+    for (const code of ['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']) {
+      let fetches = 0;
+      const ai = createAI({ apiKey: 'sk-test-secret', fetchImpl: async () => {
+        fetches++;
+        throw failedFetch(code, 'fetch failed sk-test-secret');
+      } });
+      await assert.rejects(ai.call(request), error => error instanceof ApiError && error.status === 504
+        && /czas odpowiedzi/.test(error.message) && !error.message.includes('sk-test-secret') && !error.message.includes(code));
+      assert.equal(fetches, 1);
+      assert.equal(ai.usage.calls, 1);
+    }
+    let fetches = 0;
+    const connect = createAI({ apiKey: 'sk-test-secret', fetchImpl: async () => {
+      fetches++;
+      throw failedFetch('UND_ERR_CONNECT_TIMEOUT');
+    } });
+    await assert.rejects(connect.call(request), error => error.status === 504 && /czas odpowiedzi/.test(error.message));
+    assert.equal(fetches, 2);
+    assert.equal(connect.usage.calls, 1);
+    let wrapped = 0;
+    const headersAndReset = createAI({ apiKey: 'sk-test-secret', fetchImpl: async () => {
+      wrapped++;
+      const error = new TypeError('fetch failed');
+      error.cause = Object.assign(new Error('headers'), { code: 'UND_ERR_HEADERS_TIMEOUT', cause: Object.assign(new Error('reset'), { code: 'ECONNRESET' }) });
+      throw error;
+    } });
+    await assert.rejects(headersAndReset.call(request), error => error.status === 504);
+    assert.equal(wrapped, 1);
+    const text = logs.join('\n');
+    assert.match(text, /TypeError/);
+    assert.match(text, /fetch failed/);
+    for (const code of ['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_CONNECT_TIMEOUT']) assert.match(text, new RegExp(code));
+    assert.equal(text.includes('sk-test-secret'), false);
+  } finally { console.error = original; }
+});
+
+test('transient network errors retry once without an extra usage call', async () => {
+  const original = console.error;
+  console.error = () => {};
+  try {
+    for (const code of ['ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT']) {
+      let fetches = 0;
+      const ai = createAI({ apiKey: 'sk-test-secret', fetchImpl: async () => {
+        fetches++;
+        if (fetches === 1) throw failedFetch(code);
+        return respond(output());
+      } });
+      assert.deepEqual(await ai.call(request), { value: 'ok' });
+      assert.equal(fetches, 2, code);
+      assert.equal(ai.usage.calls, 1, code);
+      assert.equal(ai.usage.input, 100);
+    }
+    let fetches = 0;
+    const exhausted = createAI({ apiKey: 'sk-test-secret', fetchImpl: async () => { fetches++; throw failedFetch('ECONNRESET'); } });
+    await assert.rejects(exhausted.call(request), error => error.status === 502 && /połączyć/.test(error.message) && !error.message.includes('ECONNRESET'));
+    assert.equal(fetches, 2);
+    assert.equal(exhausted.usage.calls, 1);
+  } finally { console.error = original; }
+});
+
+test('openai fetch uses an undici agent with header and body timeouts covering timeoutMs', async () => {
+  const { requests, ai } = fakeAI({ timeoutMs: 600000 });
+  await ai.call(request);
+  const dispatcher = requests[0].init.dispatcher;
+  assert.equal(dispatcher?.constructor?.name, 'Agent');
+  const optionsSymbol = Object.getOwnPropertySymbols(dispatcher).find(symbol => symbol.description === 'options');
+  const options = dispatcher[optionsSymbol];
+  assert.ok(options.headersTimeout >= 600000);
+  assert.ok(options.bodyTimeout >= 600000);
+});
+
 test('integer config uses defaults for malformed values and clamps bounds', () => {
   assert.equal(integer('bad', 7, 3, 9), 7);
   assert.equal(integer('', 7, 3, 9), 7);

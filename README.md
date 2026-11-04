@@ -4,7 +4,7 @@ Polskie teksty z rymami oraz dopasowane instrukcje brzmienia do Suno. Aplikacja 
 
 ## Uruchomienie
 
-Wymagany Node.js 20 lub nowszy. Nie ma zewnętrznych zależności.
+Wymagany Node.js 20 lub nowszy. Jedyna zależność to `undici` 6.29.1 — ta sama wersja, na której oparty jest wbudowany fetch w Node.js 22. Podnosi limit oczekiwania na nagłówki i treść odpowiedzi do `OPENAI_TIMEOUT_MS`, bo domyślne 300 s ucinało wolne wywołania z rozumowaniem. `npm install` instaluje ją przed startem.
 
 1. Ustaw istniejący `OPENAI_API_KEY` w panelu hostingu albo lokalnym `.env`.
 2. Ustaw `APP_PASSWORD`, jeśli udostępniasz aplikację w internecie.
@@ -49,4 +49,4 @@ Próg redakcyjny: wszystkie kategorie co najmniej 8/10, bez zgłoszonych usterek
 
 Historia (15 wyników) i zadania są w pamięci procesu. Wyniki zadań wygasają po dwóch godzinach lub restarcie serwera; pobierz TXT, aby je zachować. Hosting z wieloma replikami wymaga wspólnego magazynu zadań; ta paczka jest przeznaczona dla jednego procesu.
 
-Plik `KARASKO-ALL-IN-ONE.cjs` zawiera identyczną aplikację razem z interfejsem w jednym pliku. Możesz uruchomić go przez `node KARASKO-ALL-IN-ONE.cjs`, bez package.json i pozostałych plików. Wersję wieloplikową uruchamia `npm start`.
+Plik `KARASKO-ALL-IN-ONE.cjs` zawiera identyczną aplikację razem z interfejsem w jednym pliku. Możesz uruchomić go przez `node KARASKO-ALL-IN-ONE.cjs`. Jeśli w katalogu jest zainstalowany `undici`, plik używa tych samych limitów czasu. Bez tej paczki nadal startuje i korzysta ze zwykłego fetch Node, z domyślnym limitem nagłówków 300 s. Wersję wieloplikową uruchamia `npm start`.

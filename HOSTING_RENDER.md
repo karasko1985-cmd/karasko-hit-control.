@@ -8,7 +8,7 @@
 4. Ustaw Build Command `npm install`, Start Command `npm start`, Node.js 20 lub nowszy. Uruchom wdrożenie.
 5. Po wejściu na stronę sprawdź nazwę modelu w górnym pasku. Wpisz temat i preferencje, wybierz Jakość. Wynik skopiujesz przyciskiem **Kopiuj całość**.
 
-Jeśli używasz pojedynczego pliku `KARASKO-ALL-IN-ONE.cjs`, ustaw Build Command `true` oraz Start Command `node KARASKO-ALL-IN-ONE.cjs`. Nie potrzebuje instalacji zależności.
+Jeśli używasz pojedynczego pliku `KARASKO-ALL-IN-ONE.cjs`, zostaw Build Command `npm install` (potrzebny jest `undici`) i ustaw Start Command `node KARASKO-ALL-IN-ONE.cjs`. Bez zainstalowanego `undici` plik nadal startuje, ale zostaje domyślny limit nagłówków Node (300 s).
 
 ## Nowa aplikacja
 
