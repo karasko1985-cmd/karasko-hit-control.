@@ -166,6 +166,17 @@ function scriptedAI(maxCalls, { revise = false, failRevision = false } = {}) {
   return ai;
 }
 
+test('writing and revision calls are marked for the lower writer effort', async () => {
+  const ai = scriptedAI(7, { revise: true });
+  await buildSong({}, ai);
+  const flagged = name => ai.inputs.find(item => item.name === name).writing === true;
+  assert.equal(flagged('song'), true);
+  assert.equal(flagged('revised_song'), true);
+  assert.equal(flagged('music_direction'), false);
+  assert.equal(flagged('review'), false);
+  assert.equal(flagged('comparison'), false);
+});
+
 test('every build stage receives the full manual brief including review', async () => {
   const ai = scriptedAI(3);
   const payload = { autoMatch: false, genre: direction.genre, bpm: 96, mood: direction.mood, topic: direction.topic, preferences: 'Bez pianina' };

@@ -17,7 +17,7 @@ const fakeResult = () => ({ song: { title: 'Numer' }, review: { scores: {} }, cr
 test('config rejects invalid numerical values and respects model override', () => {
   const cfg = configFromEnv({ MAX_AI_CALLS: 'NaN', OPENAI_MAX_OUTPUT_TOKENS: 'oops', OPENAI_MODEL: 'gpt-5.4' });
   assert.equal(cfg.maxCalls, 7);
-  assert.equal(cfg.maxOutputTokens, 16000);
+  assert.equal(cfg.maxOutputTokens, 64000);
   assert.equal(cfg.model, 'gpt-5.4');
   assert.equal(configFromEnv({ MAX_AI_CALLS: '2' }).maxCalls, 3);
 });
@@ -37,10 +37,19 @@ test('config trims whitespace, newlines and wrapping quotes from env strings', (
   assert.equal(cfg.model, 'gpt-6-astra');
   assert.equal(cfg.reviewModel, 'gpt-review');
   assert.equal(cfg.effort, 'high');
+  assert.equal(cfg.writerEffort, 'medium');
   assert.equal(cfg.maxCalls, 8);
   assert.equal(cfg.inputRate, 2.5);
   assert.equal(cfg.apiKey.includes(' '), false);
   assert.equal(cfg.apiKey.includes('\n'), false);
+  const efforts = configFromEnv({ OPENAI_REASONING_EFFORT: '"minimal"\n', OPENAI_WRITER_EFFORT: ' HIGH ', OPENAI_MAX_OUTPUT_TOKENS: '70000' });
+  assert.equal(efforts.effort, 'minimal');
+  assert.equal(efforts.writerEffort, 'high');
+  assert.equal(efforts.maxOutputTokens, 64000);
+  const invalid = configFromEnv({ OPENAI_REASONING_EFFORT: 'xhigh', OPENAI_WRITER_EFFORT: 'max' });
+  assert.equal(invalid.effort, 'high');
+  assert.equal(invalid.writerEffort, 'medium');
+  assert.equal(configFromEnv({}).maxOutputTokens, 64000);
 });
 
 test('HTTP auth, static allowlist, JSON validation, jobs and active generation control', async () => {

@@ -135,7 +135,7 @@ export async function buildSong(payload, ai, onProgress = () => {}) {
   onProgress({ stage: 'direction', message: 'Dobieram brzmienie, tempo, historię i plan rymów…' });
   const direction = normalizeDirection(await ai.call({ name: 'music_direction', schema: DIRECTION_SCHEMA, instructions: PRODUCER_RULES, input: { brief }, creative: true }), brief);
   onProgress({ stage: 'writing', message: 'Piszę tekst, refren i dopasowaną produkcję…' });
-  let song = normalizeSong(await ai.call({ name: 'song', schema: SONG_SCHEMA, instructions: WRITER_RULES, input: { brief, direction }, creative: true }));
+  let song = normalizeSong(await ai.call({ name: 'song', schema: SONG_SCHEMA, instructions: WRITER_RULES, input: { brief, direction }, creative: true, writing: true }));
   onProgress({ stage: 'review', message: 'Sprawdzam rymy, naturalność, flow i zgodność stylu z tekstem…' });
   let review = normalizeReview(await ai.call({ name: 'review', schema: REVIEW_SCHEMA, instructions: REVIEW_RULES, input: { brief, direction, song }, reviewer: true }), song, direction);
   let selectedIteration = 1;
@@ -144,7 +144,7 @@ export async function buildSong(payload, ai, onProgress = () => {}) {
     const iteration = revisions.length + 1;
     try {
       onProgress({ stage: 'revision', message: `Runda ${iteration}: poprawiam wskazane rymy, refren i brzmienie…` });
-      const candidate = normalizeSong(await ai.call({ name: 'revised_song', schema: SONG_SCHEMA, creative: true,
+      const candidate = normalizeSong(await ai.call({ name: 'revised_song', schema: SONG_SCHEMA, creative: true, writing: true,
         instructions: WRITER_RULES + '\nRedakcja: zachowaj mocne fragmenty, ale przebuduj słaby refren, rymy, flow lub Style, jeśli recenzja to uzasadnia. Nie zmieniaj tematu ani ręcznych ustawień. Zwróć pełną wersję wszystkich pól.',
         input: { brief, direction, song, review } }));
       onProgress({ stage: 'comparison', message: 'Porównuję obie wersje według tej samej skali…' });

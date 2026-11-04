@@ -70,12 +70,65 @@ test('failed HTTP calls count against budget and return actionable safe errors',
 });
 
 test('incomplete output cannot be accepted but consumed tokens are still counted', async () => {
-  const { ai } = fakeAI({ data: output({}, { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } }) });
+  const { ai, requests } = fakeAI({ data: output({}, { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } }) });
   await assert.rejects(ai.call(request), /nie dokończył/);
-  assert.equal(ai.usage.calls, 1);
-  assert.equal(ai.usage.input, 100);
-  assert.equal(ai.usage.output, 50);
-  assert.equal(ai.usage.reasoning, 20);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].body.reasoning.effort, 'high');
+  assert.equal(requests[1].body.reasoning.effort, 'medium');
+  assert.equal(ai.usage.calls, 2);
+  assert.equal(ai.usage.input, 200);
+  assert.equal(ai.usage.output, 100);
+  assert.equal(ai.usage.reasoning, 40);
+});
+
+test('token-limit incomplete retries once at the next lower effort and can succeed', async () => {
+  let step = 0;
+  const ai = createAI({ apiKey: 'offline-test-placeholder', model: 'gpt-6-astra', writerEffort: 'medium', maxOutputTokens: 64000,
+    fetchImpl: async (_url, init) => {
+      step++;
+      const body = JSON.parse(init.body);
+      if (step === 1) {
+        assert.equal(body.reasoning.effort, 'medium');
+        assert.equal(body.max_output_tokens, 64000);
+        return respond(output({}, { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } }));
+      }
+      assert.equal(body.reasoning.effort, 'low');
+      return respond(output({ value: 'ok' }));
+    } });
+  assert.deepEqual(await ai.call({ ...request, writing: true }), { value: 'ok' });
+  assert.equal(step, 2);
+  assert.equal(ai.usage.calls, 2);
+  assert.equal(ai.usage.input, 200);
+});
+
+test('incomplete retries stop at minimal, respect maxCalls, and ignore other reasons', async () => {
+  const minimal = fakeAI({ effort: 'minimal', data: output({}, { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } }) });
+  await assert.rejects(minimal.ai.call(request), /nie dokończył/);
+  assert.equal(minimal.requests.length, 1);
+  assert.equal(minimal.ai.usage.calls, 1);
+  const capped = fakeAI({ maxCalls: 1, data: output({}, { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } }) });
+  await assert.rejects(capped.ai.call(request), /nie dokończył/);
+  assert.equal(capped.requests.length, 1);
+  assert.equal(capped.ai.usage.input, 100);
+  const other = fakeAI({ data: output({}, { status: 'incomplete', incomplete_details: { reason: 'content_filter' } }) });
+  await assert.rejects(other.ai.call(request), /nie dokończył/);
+  assert.equal(other.requests.length, 1);
+  const plain = fakeAI({ model: 'gpt-4.1', data: output({}, { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } }) });
+  await assert.rejects(plain.ai.call(request), /nie dokończył/);
+  assert.equal(plain.requests.length, 1);
+  assert.equal(Object.hasOwn(plain.requests[0].body, 'reasoning'), false);
+});
+
+test('writer calls use medium effort and the default output budget is 64000', async () => {
+  const { ai, requests } = fakeAI({ model: 'gpt-6-astra' });
+  await ai.call({ ...request, writing: true });
+  await ai.call(request);
+  await ai.call({ ...request, reviewer: true, creative: false });
+  assert.equal(requests[0].body.reasoning.effort, 'medium');
+  assert.equal(requests[1].body.reasoning.effort, 'high');
+  assert.equal(requests[2].body.reasoning.effort, 'high');
+  assert.equal(requests[0].body.max_output_tokens, 64000);
+  assert.equal(requests[0].body.temperature, undefined);
 });
 
 test('refusal and noncompleted statuses are reported clearly', async () => {
