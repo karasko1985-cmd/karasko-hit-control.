@@ -1,0 +1,16 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const read = file => fs.readFileSync(path.join(root, file), 'utf8');
+const removeExports = source => source.replace(/^export /gm, '');
+const ai = removeExports(read('ai.js'));
+const quality = removeExports(read('quality.js'));
+let server = removeExports(read('server.js')).replace(/^import .*;\n/gm, '');
+server = server.replace("const ROOT = path.dirname(fileURLToPath(import.meta.url));", 'const ROOT = __dirname;');
+server = server.replace('if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href)', 'if (require.main === module)');
+server = server.replace('const server = createApp();', 'const server = createApp({ assets: EMBEDDED_ASSETS });');
+const assets = Object.fromEntries(['index.html', 'app.js', 'style.css'].map(file => [file, read(file)]));
+const bundle = `#!/usr/bin/env node\n// KARASKO HIT CONTROL 2 — generated from the tested source modules.\n// Start: node KARASKO-ALL-IN-ONE.cjs; set OPENAI_API_KEY and APP_PASSWORD on your host.\n'use strict';\nconst http = require('node:http');\nconst fs = require('node:fs');\nconst path = require('node:path');\nconst crypto = require('node:crypto');\n${ai}\n${quality}\nconst EMBEDDED_ASSETS = ${JSON.stringify(assets)};\n${server}`;
+fs.writeFileSync(path.join(root, 'KARASKO-ALL-IN-ONE.cjs'), bundle);
+console.log('Generated KARASKO-ALL-IN-ONE.cjs');
