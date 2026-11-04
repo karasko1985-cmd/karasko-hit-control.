@@ -4,7 +4,7 @@
 
 1. Podmień pliki repozytorium zawartością paczki, w tym nowe `ai.js` i `quality.js`. Nie dodawaj `.env`.
 2. Zachowaj istniejące `OPENAI_API_KEY` i `APP_PASSWORD` w Render → Environment.
-3. Ustaw **OPENAI_MODEL=gpt-6-astra** i **OPENAI_REASONING_EFFORT=high**. Usuń stare OPENAI_REVIEW_MODEL albo ustaw ten sam model. Jeśli pozostawisz wcześniejsze OPENAI_MODEL, Render nadal będzie go używać. Brak dostępu do modelu zostanie pokazany jako błąd; możesz wybrać inny dostępny model.
+3. Ustaw **OPENAI_MODEL=gpt-6-astra**, **OPENAI_REASONING_EFFORT=high** i **OPENAI_TIMEOUT_MS=600000** (domyślny limit jednego wywołania). Usuń stare OPENAI_REVIEW_MODEL albo ustaw ten sam model. Jeśli pozostawisz wcześniejsze OPENAI_MODEL, Render nadal będzie go używać. Brak dostępu do modelu zostanie pokazany jako błąd; możesz wybrać inny dostępny model.
 4. Ustaw Build Command `npm install`, Start Command `npm start`, Node.js 20 lub nowszy. Uruchom wdrożenie.
 5. Po wejściu na stronę sprawdź nazwę modelu w górnym pasku. Wpisz temat i preferencje, wybierz Jakość. Wynik skopiujesz przyciskiem **Kopiuj całość**.
 

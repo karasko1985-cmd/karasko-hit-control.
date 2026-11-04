@@ -34,7 +34,7 @@ Domyślny model autora i recenzenta: `gpt-6-astra`, rozumowanie `high`. Nazwa i 
 | OPENAI_REASONING_EFFORT | high | low / medium / high / xhigh / max; model musi obsługiwać wybraną wartość |
 | MAX_AI_CALLS | 7 | Limit 3–9, obejmuje próby; bez automatycznych ponowień po błędzie |
 | OPENAI_MAX_OUTPUT_TOKENS | 16000 | Limit odpowiedzi z tokenami rozumowania, zakres 8000–64000 |
-| OPENAI_TIMEOUT_MS | 240000 | Limit czasu pojedynczego wywołania, 30000–600000 ms |
+| OPENAI_TIMEOUT_MS | 600000 | Limit czasu pojedynczego wywołania, 30000–600000 ms |
 | PORT | 3000 | Port serwera |
 
 Można wybrać np. `gpt-6.1-sol`, `gpt-5.4` lub `gpt-4.1`, jeśli konto je obsługuje. Parametr reasoning jest wysyłany dla rodzin GPT-5/GPT-6 i o; temperature dla nich pomijamy. Dla gpt-4.1 pomijamy reasoning. Wybrany model musi obsługiwać Responses API i JSON Schema. Nie ma cichego przejścia na słabszy model po błędzie.

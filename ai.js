@@ -11,7 +11,7 @@ export function integer(value, fallback, min, max) {
 }
 
 export function createAI({ apiKey, model = DEFAULT_MODEL, reviewModel = model,
-  maxCalls = 7, maxOutputTokens = 16000, timeoutMs = 240000,
+  maxCalls = 7, maxOutputTokens = 16000, timeoutMs = 600000,
   effort = 'high', fetchImpl = globalThis.fetch } = {}) {
   const usage = { input: 0, output: 0, reasoning: 0, calls: 0, byModel: {} };
   return {
