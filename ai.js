@@ -11,7 +11,6 @@ export function integer(value, fallback, min, max) {
 }
 
 const TIMEOUT_MESSAGE = 'Model przekroczył czas odpowiedzi. Spróbuj trybu szybkiego lub niższego OPENAI_REASONING_EFFORT.';
-const NETWORK_MESSAGE = 'Nie udało się połączyć z OpenAI. Sprawdź połączenie i dostępność usługi.';
 const TIMEOUT_CODES = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_CONNECT_TIMEOUT']);
 const RETRY_CODES = new Set(['ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT']);
 let undiciPromise;
@@ -54,6 +53,33 @@ function shouldRetry(error) {
   return codes.some(code => RETRY_CODES.has(code));
 }
 
+function isDispatcherError(error) {
+  const parts = [];
+  const seen = new Set();
+  let current = error;
+  while (current && typeof current === 'object' && !seen.has(current)) {
+    seen.add(current);
+    parts.push(current.name, current.message, current.code);
+    current = current.cause;
+  }
+  return /onRequestStart|dispatcher/i.test(parts.filter(Boolean).join(' '));
+}
+
+function connectionMessage(error, apiKey) {
+  const clean = value => redact(value, apiKey).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const name = clean(error?.name || 'Error') || 'Error';
+  const code = clean(errorCodes(error)[0] || '');
+  const own = clean(error?.message || '');
+  const cause = clean(error?.cause?.message || '');
+  const prefix = 'Nie udało się połączyć z OpenAI (';
+  const tail = [code, cause && cause !== own && cause !== code ? cause : ''].filter(Boolean).join(' / ');
+  const tailPart = tail ? ` / ${tail}` : '';
+  const available = 150 - prefix.length - 1 - name.length - 2 - tailPart.length;
+  const shown = available < own.length ? own.slice(0, Math.max(0, available)) : own;
+  const text = `${prefix}${name}: ${shown}${tailPart})`;
+  return text.length <= 150 ? text : `${text.slice(0, 149)})`;
+}
+
 async function dispatcherFor(timeoutMs) {
   const undici = await loadUndici();
   if (!undici) return null;
@@ -69,6 +95,7 @@ export function createAI({ apiKey, model = DEFAULT_MODEL, reviewModel = model,
   effort = 'high', fetchImpl = globalThis.fetch } = {}) {
   const usage = { input: 0, output: 0, reasoning: 0, calls: 0, byModel: {} };
   let dispatcherPromise;
+  let allowDispatcher = true;
   return {
     usage, model, reviewModel, maxCalls,
     async call({ instructions, input, schema, name, reviewer = false, creative = false }) {
@@ -87,18 +114,20 @@ export function createAI({ apiKey, model = DEFAULT_MODEL, reviewModel = model,
       const dispatcher = await dispatcherPromise;
       let response;
       for (let attempt = 0; attempt < 2; attempt++) {
+        const useDispatcher = allowDispatcher && dispatcher;
         try {
           response = await fetchImpl('https://api.openai.com/v1/responses', {
             method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
-            ...(dispatcher ? { dispatcher } : {})
+            ...(useDispatcher ? { dispatcher } : {})
           });
           break;
         } catch (error) {
           logFetchFailure(error, apiKey);
+          if (attempt === 0 && useDispatcher && isDispatcherError(error)) { allowDispatcher = false; continue; }
           if (attempt === 0 && shouldRetry(error)) continue;
           if (isTimeoutError(error)) throw new ApiError(TIMEOUT_MESSAGE, 504);
-          throw new ApiError(NETWORK_MESSAGE);
+          throw new ApiError(connectionMessage(error, apiKey));
         }
       }
       const data = await response.json().catch(() => null);

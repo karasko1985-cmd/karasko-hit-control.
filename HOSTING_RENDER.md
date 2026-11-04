@@ -5,7 +5,7 @@
 1. Podmień pliki repozytorium zawartością paczki, w tym nowe `ai.js` i `quality.js`. Nie dodawaj `.env`.
 2. Zachowaj istniejące `OPENAI_API_KEY` i `APP_PASSWORD` w Render → Environment.
 3. Ustaw **OPENAI_MODEL=gpt-6-astra**, **OPENAI_REASONING_EFFORT=high** i **OPENAI_TIMEOUT_MS=600000** (domyślny limit jednego wywołania). Usuń stare OPENAI_REVIEW_MODEL albo ustaw ten sam model. Jeśli pozostawisz wcześniejsze OPENAI_MODEL, Render nadal będzie go używać. Brak dostępu do modelu zostanie pokazany jako błąd; możesz wybrać inny dostępny model.
-4. Ustaw Build Command `npm install`, Start Command `npm start`, Node.js 20 lub nowszy. Uruchom wdrożenie.
+4. Ustaw Build Command `npm install`, Start Command `npm start`, Node.js 22 (plik `.node-version` i `NODE_VERSION=22`, zgodnie z `undici` 6.x). Uruchom wdrożenie.
 5. Po wejściu na stronę sprawdź nazwę modelu w górnym pasku. Wpisz temat i preferencje, wybierz Jakość. Wynik skopiujesz przyciskiem **Kopiuj całość**.
 
 Jeśli używasz pojedynczego pliku `KARASKO-ALL-IN-ONE.cjs`, zostaw Build Command `npm install` (potrzebny jest `undici`) i ustaw Start Command `node KARASKO-ALL-IN-ONE.cjs`. Bez zainstalowanego `undici` plik nadal startuje, ale zostaje domyślny limit nagłówków Node (300 s).

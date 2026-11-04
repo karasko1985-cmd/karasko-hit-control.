@@ -22,6 +22,27 @@ test('config rejects invalid numerical values and respects model override', () =
   assert.equal(configFromEnv({ MAX_AI_CALLS: '2' }).maxCalls, 3);
 });
 
+test('config trims whitespace, newlines and wrapping quotes from env strings', () => {
+  const cfg = configFromEnv({
+    OPENAI_API_KEY: ' "sk-test-secret" \n',
+    APP_PASSWORD: "'local-test'\r\n",
+    OPENAI_MODEL: " 'gpt-6-astra' \n",
+    OPENAI_REVIEW_MODEL: '"gpt-review"\n',
+    OPENAI_REASONING_EFFORT: ' high\n',
+    MAX_AI_CALLS: '"8"\n',
+    INPUT_USD_PER_M: ' "2.5" '
+  });
+  assert.equal(cfg.apiKey, 'sk-test-secret');
+  assert.equal(cfg.password, 'local-test');
+  assert.equal(cfg.model, 'gpt-6-astra');
+  assert.equal(cfg.reviewModel, 'gpt-review');
+  assert.equal(cfg.effort, 'high');
+  assert.equal(cfg.maxCalls, 8);
+  assert.equal(cfg.inputRate, 2.5);
+  assert.equal(cfg.apiKey.includes(' '), false);
+  assert.equal(cfg.apiKey.includes('\n'), false);
+});
+
 test('HTTP auth, static allowlist, JSON validation, jobs and active generation control', async () => {
   let release;
   const blocked = new Promise(resolve => { release = resolve; });
