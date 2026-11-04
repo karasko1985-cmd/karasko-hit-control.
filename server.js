@@ -26,7 +26,7 @@ export function configFromEnv(env = process.env) {
   return { apiKey: env.OPENAI_API_KEY || '', password: env.APP_PASSWORD || '',
     model: env.OPENAI_MODEL || DEFAULT_MODEL, reviewModel: env.OPENAI_REVIEW_MODEL || env.OPENAI_MODEL || DEFAULT_MODEL,
     maxCalls: integer(env.MAX_AI_CALLS, 7, 3, 9), maxOutputTokens: integer(env.OPENAI_MAX_OUTPUT_TOKENS, 16000, 8000, 64000),
-    timeoutMs: integer(env.OPENAI_TIMEOUT_MS, 240000, 30000, 600000), effort,
+    timeoutMs: integer(env.OPENAI_TIMEOUT_MS, 600000, 30000, 600000), effort,
     inputRate: rate(env.INPUT_USD_PER_M), outputRate: rate(env.OUTPUT_USD_PER_M),
     reviewInputRate: rate(env.REVIEW_INPUT_USD_PER_M), reviewOutputRate: rate(env.REVIEW_OUTPUT_USD_PER_M) };
 }
