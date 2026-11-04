@@ -21,14 +21,25 @@ const STATIC = new Set(['index.html', 'app.js', 'style.css']);
 const LIMIT = 32000;
 const JOB_TTL = 2 * 60 * 60 * 1000;
 
+function envString(value) {
+  if (value == null) return '';
+  let text = String(value).replace(/^\uFEFF/, '').trim();
+  while (text.length >= 2 && ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'")))) {
+    text = text.slice(1, -1).trim();
+  }
+  return text.replace(/[\r\n]/g, '').trim();
+}
+
 export function configFromEnv(env = process.env) {
-  const effort = ['low', 'medium', 'high', 'xhigh', 'max'].includes(env.OPENAI_REASONING_EFFORT) ? env.OPENAI_REASONING_EFFORT : 'high';
-  return { apiKey: env.OPENAI_API_KEY || '', password: env.APP_PASSWORD || '',
-    model: env.OPENAI_MODEL || DEFAULT_MODEL, reviewModel: env.OPENAI_REVIEW_MODEL || env.OPENAI_MODEL || DEFAULT_MODEL,
-    maxCalls: integer(env.MAX_AI_CALLS, 7, 3, 9), maxOutputTokens: integer(env.OPENAI_MAX_OUTPUT_TOKENS, 16000, 8000, 64000),
-    timeoutMs: integer(env.OPENAI_TIMEOUT_MS, 600000, 30000, 600000), effort,
-    inputRate: rate(env.INPUT_USD_PER_M), outputRate: rate(env.OUTPUT_USD_PER_M),
-    reviewInputRate: rate(env.REVIEW_INPUT_USD_PER_M), reviewOutputRate: rate(env.REVIEW_OUTPUT_USD_PER_M) };
+  const effortValue = envString(env.OPENAI_REASONING_EFFORT);
+  const effort = ['low', 'medium', 'high', 'xhigh', 'max'].includes(effortValue) ? effortValue : 'high';
+  const model = envString(env.OPENAI_MODEL);
+  return { apiKey: envString(env.OPENAI_API_KEY), password: envString(env.APP_PASSWORD),
+    model: model || DEFAULT_MODEL, reviewModel: envString(env.OPENAI_REVIEW_MODEL) || model || DEFAULT_MODEL,
+    maxCalls: integer(envString(env.MAX_AI_CALLS), 7, 3, 9), maxOutputTokens: integer(envString(env.OPENAI_MAX_OUTPUT_TOKENS), 16000, 8000, 64000),
+    timeoutMs: integer(envString(env.OPENAI_TIMEOUT_MS), 600000, 30000, 600000), effort,
+    inputRate: rate(envString(env.INPUT_USD_PER_M)), outputRate: rate(envString(env.OUTPUT_USD_PER_M)),
+    reviewInputRate: rate(envString(env.REVIEW_INPUT_USD_PER_M)), reviewOutputRate: rate(envString(env.REVIEW_OUTPUT_USD_PER_M)) };
 }
 function rate(value) { const n = Number(value); return value !== undefined && value !== '' && Number.isFinite(n) && n >= 0 ? n : null; }
 function authorized(req, password) {
@@ -142,7 +153,7 @@ export function createApp({ config = configFromEnv(), aiFactory = createAI, buil
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  const port = integer(process.env.PORT, 3000, 1, 65535);
+  const port = integer(envString(process.env.PORT), 3000, 1, 65535);
   const server = createApp();
   server.on('error', error => { console.error(`Nie udało się uruchomić serwera: ${error.code || 'błąd'}`); process.exitCode = 1; });
   server.listen(port, '0.0.0.0', () => console.log(`KARASKO HIT CONTROL: http://localhost:${port}`));

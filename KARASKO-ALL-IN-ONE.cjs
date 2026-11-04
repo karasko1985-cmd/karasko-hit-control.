@@ -19,7 +19,6 @@ function integer(value, fallback, min, max) {
 }
 
 const TIMEOUT_MESSAGE = 'Model przekroczył czas odpowiedzi. Spróbuj trybu szybkiego lub niższego OPENAI_REASONING_EFFORT.';
-const NETWORK_MESSAGE = 'Nie udało się połączyć z OpenAI. Sprawdź połączenie i dostępność usługi.';
 const TIMEOUT_CODES = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_CONNECT_TIMEOUT']);
 const RETRY_CODES = new Set(['ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT']);
 let undiciPromise;
@@ -62,6 +61,33 @@ function shouldRetry(error) {
   return codes.some(code => RETRY_CODES.has(code));
 }
 
+function isDispatcherError(error) {
+  const parts = [];
+  const seen = new Set();
+  let current = error;
+  while (current && typeof current === 'object' && !seen.has(current)) {
+    seen.add(current);
+    parts.push(current.name, current.message, current.code);
+    current = current.cause;
+  }
+  return /onRequestStart|dispatcher/i.test(parts.filter(Boolean).join(' '));
+}
+
+function connectionMessage(error, apiKey) {
+  const clean = value => redact(value, apiKey).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const name = clean(error?.name || 'Error') || 'Error';
+  const code = clean(errorCodes(error)[0] || '');
+  const own = clean(error?.message || '');
+  const cause = clean(error?.cause?.message || '');
+  const prefix = 'Nie udało się połączyć z OpenAI (';
+  const tail = [code, cause && cause !== own && cause !== code ? cause : ''].filter(Boolean).join(' / ');
+  const tailPart = tail ? ` / ${tail}` : '';
+  const available = 150 - prefix.length - 1 - name.length - 2 - tailPart.length;
+  const shown = available < own.length ? own.slice(0, Math.max(0, available)) : own;
+  const text = `${prefix}${name}: ${shown}${tailPart})`;
+  return text.length <= 150 ? text : `${text.slice(0, 149)})`;
+}
+
 async function dispatcherFor(timeoutMs) {
   const undici = await loadUndici();
   if (!undici) return null;
@@ -77,6 +103,7 @@ function createAI({ apiKey, model = DEFAULT_MODEL, reviewModel = model,
   effort = 'high', fetchImpl = globalThis.fetch } = {}) {
   const usage = { input: 0, output: 0, reasoning: 0, calls: 0, byModel: {} };
   let dispatcherPromise;
+  let allowDispatcher = true;
   return {
     usage, model, reviewModel, maxCalls,
     async call({ instructions, input, schema, name, reviewer = false, creative = false }) {
@@ -95,18 +122,20 @@ function createAI({ apiKey, model = DEFAULT_MODEL, reviewModel = model,
       const dispatcher = await dispatcherPromise;
       let response;
       for (let attempt = 0; attempt < 2; attempt++) {
+        const useDispatcher = allowDispatcher && dispatcher;
         try {
           response = await fetchImpl('https://api.openai.com/v1/responses', {
             method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
-            ...(dispatcher ? { dispatcher } : {})
+            ...(useDispatcher ? { dispatcher } : {})
           });
           break;
         } catch (error) {
           logFetchFailure(error, apiKey);
+          if (attempt === 0 && useDispatcher && isDispatcherError(error)) { allowDispatcher = false; continue; }
           if (attempt === 0 && shouldRetry(error)) continue;
           if (isTimeoutError(error)) throw new ApiError(TIMEOUT_MESSAGE, 504);
-          throw new ApiError(NETWORK_MESSAGE);
+          throw new ApiError(connectionMessage(error, apiKey));
         }
       }
       const data = await response.json().catch(() => null);
@@ -333,14 +362,25 @@ const STATIC = new Set(['index.html', 'app.js', 'style.css']);
 const LIMIT = 32000;
 const JOB_TTL = 2 * 60 * 60 * 1000;
 
+function envString(value) {
+  if (value == null) return '';
+  let text = String(value).replace(/^\uFEFF/, '').trim();
+  while (text.length >= 2 && ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'")))) {
+    text = text.slice(1, -1).trim();
+  }
+  return text.replace(/[\r\n]/g, '').trim();
+}
+
 function configFromEnv(env = process.env) {
-  const effort = ['low', 'medium', 'high', 'xhigh', 'max'].includes(env.OPENAI_REASONING_EFFORT) ? env.OPENAI_REASONING_EFFORT : 'high';
-  return { apiKey: env.OPENAI_API_KEY || '', password: env.APP_PASSWORD || '',
-    model: env.OPENAI_MODEL || DEFAULT_MODEL, reviewModel: env.OPENAI_REVIEW_MODEL || env.OPENAI_MODEL || DEFAULT_MODEL,
-    maxCalls: integer(env.MAX_AI_CALLS, 7, 3, 9), maxOutputTokens: integer(env.OPENAI_MAX_OUTPUT_TOKENS, 16000, 8000, 64000),
-    timeoutMs: integer(env.OPENAI_TIMEOUT_MS, 600000, 30000, 600000), effort,
-    inputRate: rate(env.INPUT_USD_PER_M), outputRate: rate(env.OUTPUT_USD_PER_M),
-    reviewInputRate: rate(env.REVIEW_INPUT_USD_PER_M), reviewOutputRate: rate(env.REVIEW_OUTPUT_USD_PER_M) };
+  const effortValue = envString(env.OPENAI_REASONING_EFFORT);
+  const effort = ['low', 'medium', 'high', 'xhigh', 'max'].includes(effortValue) ? effortValue : 'high';
+  const model = envString(env.OPENAI_MODEL);
+  return { apiKey: envString(env.OPENAI_API_KEY), password: envString(env.APP_PASSWORD),
+    model: model || DEFAULT_MODEL, reviewModel: envString(env.OPENAI_REVIEW_MODEL) || model || DEFAULT_MODEL,
+    maxCalls: integer(envString(env.MAX_AI_CALLS), 7, 3, 9), maxOutputTokens: integer(envString(env.OPENAI_MAX_OUTPUT_TOKENS), 16000, 8000, 64000),
+    timeoutMs: integer(envString(env.OPENAI_TIMEOUT_MS), 600000, 30000, 600000), effort,
+    inputRate: rate(envString(env.INPUT_USD_PER_M)), outputRate: rate(envString(env.OUTPUT_USD_PER_M)),
+    reviewInputRate: rate(envString(env.REVIEW_INPUT_USD_PER_M)), reviewOutputRate: rate(envString(env.REVIEW_OUTPUT_USD_PER_M)) };
 }
 function rate(value) { const n = Number(value); return value !== undefined && value !== '' && Number.isFinite(n) && n >= 0 ? n : null; }
 function authorized(req, password) {
@@ -454,7 +494,7 @@ function createApp({ config = configFromEnv(), aiFactory = createAI, build = bui
 }
 
 if (require.main === module) {
-  const port = integer(process.env.PORT, 3000, 1, 65535);
+  const port = integer(envString(process.env.PORT), 3000, 1, 65535);
   const server = createApp({ assets: EMBEDDED_ASSETS });
   server.on('error', error => { console.error(`Nie udało się uruchomić serwera: ${error.code || 'błąd'}`); process.exitCode = 1; });
   server.listen(port, '0.0.0.0', () => console.log(`KARASKO HIT CONTROL: http://localhost:${port}`));

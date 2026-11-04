@@ -98,7 +98,10 @@ test('empty output, invalid JSON and JSON primitives cannot masquerade as a vali
 test('network and timeout errors are normalized and still consume a call', async () => {
   for (const [name, status, expected] of [['TimeoutError', 504, /czas odpowiedzi/], ['AbortError', 504, /czas odpowiedzi/], ['TypeError', 502, /połączyć/]]) {
     const ai = createAI({ apiKey: 'offline-test-placeholder', fetchImpl: async () => { const e = new Error('private network details'); e.name = name; throw e; } });
-    await assert.rejects(ai.call(request), error => error.status === status && expected.test(error.message) && !error.message.includes('private network details'));
+    await assert.rejects(ai.call(request), error => {
+      const safe = error.status === status && expected.test(error.message) && !error.message.includes('offline-test-placeholder') && error.message.length <= 150;
+      return name === 'TypeError' ? safe && error.message.includes('TypeError') && error.message.includes('private network details') : safe && !error.message.includes('private network details');
+    });
     assert.equal(ai.usage.calls, 1);
   }
 });
@@ -168,9 +171,43 @@ test('transient network errors retry once without an extra usage call', async ()
     }
     let fetches = 0;
     const exhausted = createAI({ apiKey: 'sk-test-secret', fetchImpl: async () => { fetches++; throw failedFetch('ECONNRESET'); } });
-    await assert.rejects(exhausted.call(request), error => error.status === 502 && /połączyć/.test(error.message) && !error.message.includes('ECONNRESET'));
+    await assert.rejects(exhausted.call(request), error => error.status === 502 && /połączyć/.test(error.message)
+      && /TypeError: fetch failed \/ ECONNRESET/.test(error.message) && !error.message.includes('sk-test-secret') && error.message.length <= 150);
     assert.equal(fetches, 2);
     assert.equal(exhausted.usage.calls, 1);
+  } finally { console.error = original; }
+});
+
+test('dispatcher mismatch retries once without the dispatcher and later calls skip it', async () => {
+  const original = console.error;
+  console.error = () => {};
+  try {
+    const inits = [];
+    const ai = createAI({ apiKey: 'sk-test-secret', fetchImpl: async (_url, init) => {
+      inits.push(init);
+      if (init.dispatcher) throw new TypeError('invalid onRequestStart method sk-test-secret');
+      return respond(output());
+    } });
+    assert.deepEqual(await ai.call(request), { value: 'ok' });
+    assert.deepEqual(await ai.call(request), { value: 'ok' });
+    assert.equal(inits.length, 3);
+    assert.ok(inits[0].dispatcher);
+    assert.equal(inits[1].dispatcher, undefined);
+    assert.equal(inits[2].dispatcher, undefined);
+    assert.equal(ai.usage.calls, 2);
+    let fetches = 0;
+    const failing = createAI({ apiKey: 'sk-test-secret', fetchImpl: async () => {
+      fetches++;
+      const error = new TypeError(`fetch failed sk-test-secret ${'x'.repeat(400)}`);
+      error.cause = Object.assign(new Error('socket hang up sk-test-secret'), { code: 'UND_ERR_SOCKET' });
+      throw error;
+    } });
+    await assert.rejects(failing.call(request), error => error.status === 502
+      && error.message.startsWith('Nie udało się połączyć z OpenAI (TypeError: fetch failed')
+      && error.message.includes('UND_ERR_SOCKET') && error.message.includes('socket hang up')
+      && !error.message.includes('sk-test-secret') && error.message.length <= 150);
+    assert.equal(fetches, 2);
+    assert.equal(failing.usage.calls, 1);
   } finally { console.error = original; }
 });
 
