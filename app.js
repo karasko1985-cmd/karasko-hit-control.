@@ -229,9 +229,10 @@ document.querySelectorAll('[data-copy]').forEach(button => button.addEventListen
   if (!current) return;
   try {
     await navigator.clipboard.writeText(button.dataset.copy === 'combined' ? formatSong(current) : (current.song[button.dataset.copy] || ''));
-    const previous = button.textContent;
+    const label = button.dataset.label || button.textContent;
+    button.dataset.label = label;
     button.textContent = 'Skopiowano ✓';
-    setTimeout(() => { button.textContent = previous; }, 1600);
+    setTimeout(() => { button.textContent = label; }, 1600);
   } catch {
     $('copyFeedback').textContent = 'Nie udało się skopiować. Zaznacz tekst ręcznie lub pobierz plik TXT.';
   }
@@ -249,5 +250,5 @@ $('download').addEventListener('click', () => {
   document.body.append(link);
   link.click();
   link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => URL.revokeObjectURL(url), 15000);
 });

@@ -50,6 +50,10 @@ function authorized(req, password) {
   const expected = Buffer.from(password);
   return decoded.includes(':') && candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected);
 }
+function scrub(message, apiKey) {
+  const text = typeof message === 'string' && message ? message : 'Błąd serwera.';
+  return (apiKey ? text.split(apiKey).join('[redacted]') : text).slice(0, 500);
+}
 function send(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
   res.end(JSON.stringify(body));
@@ -89,17 +93,22 @@ export function createApp({ config = configFromEnv(), aiFactory = createAI, buil
   };
   const runJob = async (job, payload) => {
     job.status = 'running'; job.updatedAt = Date.now();
+    let ai;
     try {
-      const ai = aiFactory(config);
+      ai = aiFactory(config);
       job.result = await build(payload, ai, progress => { job.progress = progress; job.updatedAt = Date.now(); });
       job.result.estimatedUsd = estimateCost(job.result, config);
       job.status = 'completed'; job.progress = { stage: 'completed', message: 'Gotowe. Wybierz Całość, aby skopiować cały numer.' };
       history.unshift(job.result); if (history.length > 15) history.pop();
     } catch (error) {
-      job.status = 'failed'; job.error = error.message || 'Nie udało się przygotować utworu.';
+      job.status = 'failed'; job.error = scrub(error.message || 'Nie udało się przygotować utworu.', config.apiKey);
       job.httpStatus = error.status || 502;
       job.progress = { stage: 'failed', message: 'Generacja zatrzymana.' };
-    } finally { job.updatedAt = Date.now(); active.delete(job.id); prune(); }
+    } finally {
+      job.updatedAt = Date.now(); active.delete(job.id);
+      try { await ai?.close?.(); } catch { /* Agent mógł już zostać zamknięty. */ }
+      prune();
+    }
   };
   const handler = async (req, res) => {
     try {
@@ -132,8 +141,8 @@ export function createApp({ config = configFromEnv(), aiFactory = createAI, buil
         const job = { id: crypto.randomUUID(), status: 'queued', updatedAt: Date.now(), progress: { stage: 'queued', message: 'Przygotowuję generację…' } };
         jobs.set(job.id, job); active.set(job.id, ip); perIp.set(ip, Date.now());
         if (pathname === '/api/jobs') {
-          send(res, 202, { id: job.id, status: job.status, progress: job.progress });
           setImmediate(() => { void runJob(job, payload); });
+          send(res, 202, { id: job.id, status: job.status, progress: job.progress });
           return;
         }
         await runJob(job, payload);
@@ -147,7 +156,11 @@ export function createApp({ config = configFromEnv(), aiFactory = createAI, buil
       if (data === null) return send(res, 404, { error: 'Brak pliku aplikacji.' });
       res.writeHead(200, { 'content-type': MIME[path.extname(file)], 'x-content-type-options': 'nosniff', 'cache-control': 'no-cache' });
       return res.end(req.method === 'HEAD' ? undefined : data);
-    } catch (error) { return send(res, error.status || 500, { error: error.message || 'Błąd serwera.' }); }
+    } catch (error) {
+      if (res.headersSent || res.writableEnded) return;
+      try { return send(res, error.status || 500, { error: scrub(error.message, config.apiKey) }); }
+      catch { return; }
+    }
   };
   return http.createServer(handler);
 }

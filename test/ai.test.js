@@ -275,6 +275,13 @@ test('openai fetch uses an undici agent with header and body timeouts covering t
   assert.ok(options.bodyTimeout >= 600000);
 });
 
+test('closing the client releases the dispatcher and can be repeated', async () => {
+  const ai = createAI({ apiKey: 'offline-test-placeholder', fetchImpl: async () => respond(output()) });
+  await ai.call(request);
+  await ai.close();
+  await ai.close();
+});
+
 test('integer config uses defaults for malformed values and clamps bounds', () => {
   assert.equal(integer('bad', 7, 3, 9), 7);
   assert.equal(integer('', 7, 3, 9), 7);

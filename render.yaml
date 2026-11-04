@@ -5,6 +5,7 @@ services:
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /healthz
+    numInstances: 1
     envVars:
       - key: NODE_VERSION
         value: "22"
