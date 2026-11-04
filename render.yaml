@@ -11,11 +11,9 @@ services:
         value: 22.16.0
       - key: OPENAI_MODEL
         value: gpt-4.1
+      - key: MAX_AI_CALLS
+        value: "6"
       - key: OPENAI_API_KEY
         sync: false
       - key: APP_PASSWORD
-        sync: false
-      - key: BRAVE_SEARCH_API_KEY
-        sync: false
-      - key: YOUTUBE_API_KEY
         sync: false
