@@ -112,6 +112,11 @@ export function createAI({ apiKey, model = DEFAULT_MODEL, reviewModel = model,
   let allowDispatcher = true;
   return {
     usage, model, reviewModel, maxCalls,
+    async close() {
+      const dispatcher = dispatcherPromise ? await dispatcherPromise : null;
+      dispatcherPromise = null;
+      if (dispatcher?.close) await dispatcher.close();
+    },
     async call({ instructions, input, schema, name, reviewer = false, creative = false, writing = false }) {
       const chosenModel = reviewer ? reviewModel : model;
       const reasoning = /^(gpt-[5-9]|o[1-9])/.test(chosenModel);

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { once } from 'node:events';
 import { createApp, configFromEnv } from '../server.js';
 
@@ -90,6 +91,53 @@ test('HTTP auth, static allowlist, JSON validation, jobs and active generation c
     const history = await (await fetch(base + '/api/history', { headers: auth })).json();
     assert.equal(history.items.length, 1);
   });
+});
+
+test('a failed job frees the slot and a response failure cannot stick it', async () => {
+  await withServer(config, async () => { throw new Error(`awaria ${config.apiKey}`); }, async base => {
+    const post = () => fetch(base + '/api/jobs', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: '{}' });
+    const created = await post();
+    const { id } = await created.json();
+    let job = { status: 'queued' };
+    for (let i = 0; i < 20 && job.status !== 'failed'; i++) {
+      job = await (await fetch(base + '/api/jobs/' + id, { headers: auth })).json();
+    }
+    assert.equal(job.status, 'failed');
+    assert.equal(job.error.includes(config.apiKey), false);
+    assert.match(job.error, /awaria \[redacted\]/);
+    const again = await post();
+    assert.equal(again.status, 429);
+    assert.match((await again.json()).error, /15 sekund/);
+  });
+});
+
+test('accepting a job still starts it when the first response cannot be written', async () => {
+  const original = http.ServerResponse.prototype.writeHead;
+  let tripped = false;
+  http.ServerResponse.prototype.writeHead = function (...args) {
+    if (!tripped && this.req?.method === 'POST' && this.req.url === '/api/jobs') {
+      tripped = true;
+      throw new Error('client gone');
+    }
+    return original.apply(this, args);
+  };
+  try {
+    await withServer(config, async () => { throw new Error('przerwane przyjęcie'); }, async base => {
+      const post = () => fetch(base + '/api/jobs', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: '{}' });
+      const first = await post();
+      assert.equal(first.status, 500);
+      let body = {};
+      for (let i = 0; i < 30; i++) {
+        const again = await post();
+        body = await again.json();
+        if (!/już trwa/.test(body.error || '')) break;
+        await new Promise(resolve => setImmediate(resolve));
+      }
+      assert.match(body.error, /15 sekund/);
+    });
+  } finally {
+    http.ServerResponse.prototype.writeHead = original;
+  }
 });
 
 test('job errors are retrievable and missing API key creates no generation', async () => {
