@@ -10,10 +10,65 @@ export function integer(value, fallback, min, max) {
   return Number.isFinite(n) && String(value).trim() ? Math.max(min, Math.min(max, Math.round(n))) : fallback;
 }
 
+const TIMEOUT_MESSAGE = 'Model przekroczył czas odpowiedzi. Spróbuj trybu szybkiego lub niższego OPENAI_REASONING_EFFORT.';
+const NETWORK_MESSAGE = 'Nie udało się połączyć z OpenAI. Sprawdź połączenie i dostępność usługi.';
+const TIMEOUT_CODES = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_CONNECT_TIMEOUT']);
+const RETRY_CODES = new Set(['ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT']);
+let undiciPromise;
+
+function loadUndici() {
+  undiciPromise ||= import('undici').then(mod => mod?.Agent ? mod : null).catch(() => null);
+  return undiciPromise;
+}
+
+function errorCodes(error) {
+  const codes = [];
+  const seen = new Set();
+  let current = error;
+  while (current && typeof current === 'object' && !seen.has(current)) {
+    seen.add(current);
+    if (typeof current.code === 'string' && current.code) codes.push(current.code);
+    current = current.cause;
+  }
+  return codes;
+}
+
+function redact(value, secret) {
+  const text = String(value ?? '');
+  return secret ? text.split(secret).join('[redacted]') : text;
+}
+
+function logFetchFailure(error, apiKey) {
+  const code = errorCodes(error)[0] || '';
+  console.error('OpenAI request failed:', redact(error?.name || 'Error', apiKey), redact(error?.message, apiKey), redact(code, apiKey));
+}
+
+function isTimeoutError(error) {
+  return error?.name === 'TimeoutError' || error?.name === 'AbortError' || errorCodes(error).some(code => TIMEOUT_CODES.has(code));
+}
+
+function shouldRetry(error) {
+  if (error?.name === 'TimeoutError' || error?.name === 'AbortError') return false;
+  const codes = errorCodes(error);
+  if (codes.some(code => code === 'UND_ERR_HEADERS_TIMEOUT' || code === 'UND_ERR_BODY_TIMEOUT')) return false;
+  return codes.some(code => RETRY_CODES.has(code));
+}
+
+async function dispatcherFor(timeoutMs) {
+  const undici = await loadUndici();
+  if (!undici) return null;
+  try { return new undici.Agent({ headersTimeout: timeoutMs, bodyTimeout: timeoutMs }); }
+  catch (error) {
+    console.error('OpenAI dispatcher unavailable:', error?.name, error?.message);
+    return null;
+  }
+}
+
 export function createAI({ apiKey, model = DEFAULT_MODEL, reviewModel = model,
   maxCalls = 7, maxOutputTokens = 16000, timeoutMs = 600000,
   effort = 'high', fetchImpl = globalThis.fetch } = {}) {
   const usage = { input: 0, output: 0, reasoning: 0, calls: 0, byModel: {} };
+  let dispatcherPromise;
   return {
     usage, model, reviewModel, maxCalls,
     async call({ instructions, input, schema, name, reviewer = false, creative = false }) {
@@ -28,16 +83,23 @@ export function createAI({ apiKey, model = DEFAULT_MODEL, reviewModel = model,
         ...(reasoning ? { reasoning: { effort } } : { temperature: creative ? 0.85 : 0.2 })
       };
       usage.calls++;
+      dispatcherPromise ||= dispatcherFor(timeoutMs);
+      const dispatcher = await dispatcherPromise;
       let response;
-      try {
-        response = await fetchImpl('https://api.openai.com/v1/responses', {
-          method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs)
-        });
-      } catch (error) {
-        if (error.name === 'TimeoutError' || error.name === 'AbortError')
-          throw new ApiError('Model przekroczył czas odpowiedzi. Spróbuj trybu szybkiego lub niższego OPENAI_REASONING_EFFORT.', 504);
-        throw new ApiError('Nie udało się połączyć z OpenAI. Sprawdź połączenie i dostępność usługi.');
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          response = await fetchImpl('https://api.openai.com/v1/responses', {
+            method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
+            ...(dispatcher ? { dispatcher } : {})
+          });
+          break;
+        } catch (error) {
+          logFetchFailure(error, apiKey);
+          if (attempt === 0 && shouldRetry(error)) continue;
+          if (isTimeoutError(error)) throw new ApiError(TIMEOUT_MESSAGE, 504);
+          throw new ApiError(NETWORK_MESSAGE);
+        }
       }
       const data = await response.json().catch(() => null);
       if (!response.ok) {
