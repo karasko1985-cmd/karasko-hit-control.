@@ -25,15 +25,16 @@ W Render użyj instrukcji HOSTING_RENDER.md. Zachowaj klucz w panelu Render; nie
 
 ## Model i ustawienia
 
-Domyślny model autora i recenzenta: `gpt-6-astra`, rozumowanie `high`. Nazwa i obsługa Responses API oraz Structured Outputs sprawdzone w oficjalnej dokumentacji: https://developers.openai.com/api/docs/models/gpt-6-astra . Dostępność zależy od konta API. Model wybiera się na serwerze, niezależnie od modelu rozmowy w ChatGPT.
+Domyślny model autora i recenzenta: `gpt-6-astra`. Plan i recenzja używają rozumowania `high`, a długie pisanie i poprawki tekstu `medium`, żeby jedno wywołanie mieściło się w limicie czasu. Nazwa i obsługa Responses API oraz Structured Outputs sprawdzone w oficjalnej dokumentacji: https://developers.openai.com/api/docs/models/gpt-6-astra . Dostępność zależy od konta API. Model wybiera się na serwerze, niezależnie od modelu rozmowy w ChatGPT.
 
 | Zmienna | Domyślnie | Znaczenie |
 | --- | --- | --- |
 | OPENAI_MODEL | gpt-6-astra | Model autora i producenta |
 | OPENAI_REVIEW_MODEL | taki jak OPENAI_MODEL | Opcjonalny osobny model recenzenta |
-| OPENAI_REASONING_EFFORT | high | low / medium / high / xhigh / max; model musi obsługiwać wybraną wartość |
-| MAX_AI_CALLS | 7 | Limit 3–9, obejmuje próby; bez automatycznych ponowień po błędzie |
-| OPENAI_MAX_OUTPUT_TOKENS | 16000 | Limit odpowiedzi z tokenami rozumowania, zakres 8000–64000 |
+| OPENAI_REASONING_EFFORT | high | minimal / low / medium / high; plan utworu i recenzja |
+| OPENAI_WRITER_EFFORT | medium | minimal / low / medium / high; pisanie i poprawki tekstu |
+| MAX_AI_CALLS | 7 | Limit 3–9, obejmuje próby; niepełna odpowiedź z limitu tokenów jest powtarzana raz na niższym effort i liczy się do limitu |
+| OPENAI_MAX_OUTPUT_TOKENS | 64000 | Limit odpowiedzi z tokenami rozumowania, zakres 8000–64000 |
 | OPENAI_TIMEOUT_MS | 600000 | Limit czasu pojedynczego wywołania, 30000–600000 ms |
 | PORT | 3000 | Port serwera |
 

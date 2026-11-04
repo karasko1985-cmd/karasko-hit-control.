@@ -10,6 +10,18 @@ export function integer(value, fallback, min, max) {
   return Number.isFinite(n) && String(value).trim() ? Math.max(min, Math.min(max, Math.round(n))) : fallback;
 }
 
+export const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high'];
+
+export function normalizeEffort(value, fallback) {
+  const text = String(value ?? '').trim().toLowerCase();
+  return REASONING_EFFORTS.includes(text) ? text : fallback;
+}
+
+function lowerEffort(level) {
+  const index = REASONING_EFFORTS.indexOf(level);
+  return index > 0 ? REASONING_EFFORTS[index - 1] : null;
+}
+
 const TIMEOUT_MESSAGE = 'Model przekroczył czas odpowiedzi. Spróbuj trybu szybkiego lub niższego OPENAI_REASONING_EFFORT.';
 const TIMEOUT_CODES = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_CONNECT_TIMEOUT']);
 const RETRY_CODES = new Set(['ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT']);
@@ -91,63 +103,74 @@ async function dispatcherFor(timeoutMs) {
 }
 
 export function createAI({ apiKey, model = DEFAULT_MODEL, reviewModel = model,
-  maxCalls = 7, maxOutputTokens = 16000, timeoutMs = 600000,
-  effort = 'high', fetchImpl = globalThis.fetch } = {}) {
+  maxCalls = 7, maxOutputTokens = 64000, timeoutMs = 600000,
+  effort = 'high', writerEffort = 'medium', fetchImpl = globalThis.fetch } = {}) {
   const usage = { input: 0, output: 0, reasoning: 0, calls: 0, byModel: {} };
+  const planEffort = normalizeEffort(effort, 'high');
+  const writeEffort = normalizeEffort(writerEffort, 'medium');
   let dispatcherPromise;
   let allowDispatcher = true;
   return {
     usage, model, reviewModel, maxCalls,
-    async call({ instructions, input, schema, name, reviewer = false, creative = false }) {
-      if (usage.calls >= maxCalls) throw new ApiError('Osiągnięto limit wywołań API.', 429);
+    async call({ instructions, input, schema, name, reviewer = false, creative = false, writing = false }) {
       const chosenModel = reviewer ? reviewModel : model;
       const reasoning = /^(gpt-[5-9]|o[1-9])/.test(chosenModel);
-      const body = {
-        model: chosenModel, store: false, instructions,
-        input: [{ role: 'user', content: JSON.stringify(input) }],
-        max_output_tokens: maxOutputTokens,
-        text: { format: { type: 'json_schema', name, strict: true, schema } },
-        ...(reasoning ? { reasoning: { effort } } : { temperature: creative ? 0.85 : 0.2 })
-      };
-      usage.calls++;
-      dispatcherPromise ||= dispatcherFor(timeoutMs);
-      const dispatcher = await dispatcherPromise;
-      let response;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const useDispatcher = allowDispatcher && dispatcher;
-        try {
-          response = await fetchImpl('https://api.openai.com/v1/responses', {
-            method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
-            ...(useDispatcher ? { dispatcher } : {})
-          });
-          break;
-        } catch (error) {
-          logFetchFailure(error, apiKey);
-          if (attempt === 0 && useDispatcher && isDispatcherError(error)) { allowDispatcher = false; continue; }
-          if (attempt === 0 && shouldRetry(error)) continue;
-          if (isTimeoutError(error)) throw new ApiError(TIMEOUT_MESSAGE, 504);
-          throw new ApiError(connectionMessage(error, apiKey));
-        }
-      }
-      const data = await response.json().catch(() => null);
-      if (!response.ok) {
-        const messages = {
-          401: 'OpenAI odrzuciło klucz API. Sprawdź OPENAI_API_KEY w hostingu.',
-          403: `Brak dostępu do modelu ${chosenModel}. Ustaw model dostępny na swoim koncie.`,
-          404: `Model ${chosenModel} nie jest dostępny. Sprawdź OPENAI_MODEL / OPENAI_REVIEW_MODEL.`,
-          429: 'OpenAI zgłosiło limit zapytań lub brak środków. Sprawdź limity i rozliczenia API.'
+      const activeEffort = writing ? writeEffort : planEffort;
+      const requestOnce = async effortLevel => {
+        if (usage.calls >= maxCalls) throw new ApiError('Osiągnięto limit wywołań API.', 429);
+        const body = {
+          model: chosenModel, store: false, instructions,
+          input: [{ role: 'user', content: JSON.stringify(input) }],
+          max_output_tokens: maxOutputTokens,
+          text: { format: { type: 'json_schema', name, strict: true, schema } },
+          ...(reasoning ? { reasoning: { effort: effortLevel } } : { temperature: creative ? 0.85 : 0.2 })
         };
-        const code = /^[a-z0-9_]+$/i.test(data?.error?.code || '') ? ` (${data.error.code})` : '';
-        throw new ApiError((messages[response.status] || `OpenAI zwróciło błąd ${response.status}. Sprawdź model i parametry API.`) + code);
+        usage.calls++;
+        dispatcherPromise ||= dispatcherFor(timeoutMs);
+        const dispatcher = await dispatcherPromise;
+        let response;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const useDispatcher = allowDispatcher && dispatcher;
+          try {
+            response = await fetchImpl('https://api.openai.com/v1/responses', {
+              method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs),
+              ...(useDispatcher ? { dispatcher } : {})
+            });
+            break;
+          } catch (error) {
+            logFetchFailure(error, apiKey);
+            if (attempt === 0 && useDispatcher && isDispatcherError(error)) { allowDispatcher = false; continue; }
+            if (attempt === 0 && shouldRetry(error)) continue;
+            if (isTimeoutError(error)) throw new ApiError(TIMEOUT_MESSAGE, 504);
+            throw new ApiError(connectionMessage(error, apiKey));
+          }
+        }
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          const messages = {
+            401: 'OpenAI odrzuciło klucz API. Sprawdź OPENAI_API_KEY w hostingu.',
+            403: `Brak dostępu do modelu ${chosenModel}. Ustaw model dostępny na swoim koncie.`,
+            404: `Model ${chosenModel} nie jest dostępny. Sprawdź OPENAI_MODEL / OPENAI_REVIEW_MODEL.`,
+            429: 'OpenAI zgłosiło limit zapytań lub brak środków. Sprawdź limity i rozliczenia API.'
+          };
+          const code = /^[a-z0-9_]+$/i.test(data?.error?.code || '') ? ` (${data.error.code})` : '';
+          throw new ApiError((messages[response.status] || `OpenAI zwróciło błąd ${response.status}. Sprawdź model i parametry API.`) + code);
+        }
+        usage.input += Number(data?.usage?.input_tokens || 0);
+        usage.output += Number(data?.usage?.output_tokens || 0);
+        usage.reasoning += Number(data?.usage?.output_tokens_details?.reasoning_tokens || 0);
+        const bucket = usage.byModel[chosenModel] ||= { input: 0, output: 0 };
+        bucket.input += Number(data?.usage?.input_tokens || 0);
+        bucket.output += Number(data?.usage?.output_tokens || 0);
+        return data;
+      };
+      let data = await requestOnce(activeEffort);
+      if (reasoning && data?.status === 'incomplete' && data?.incomplete_details?.reason === 'max_output_tokens') {
+        const nextEffort = lowerEffort(activeEffort);
+        if (nextEffort && usage.calls < maxCalls) data = await requestOnce(nextEffort);
       }
-      usage.input += Number(data?.usage?.input_tokens || 0);
-      usage.output += Number(data?.usage?.output_tokens || 0);
-      usage.reasoning += Number(data?.usage?.output_tokens_details?.reasoning_tokens || 0);
-      const bucket = usage.byModel[chosenModel] ||= { input: 0, output: 0 };
-      bucket.input += Number(data?.usage?.input_tokens || 0);
-      bucket.output += Number(data?.usage?.output_tokens || 0);
-      if (data?.status === 'incomplete') throw new ApiError('Model nie dokończył odpowiedzi. Zwiększ OPENAI_MAX_OUTPUT_TOKENS lub zmniejsz OPENAI_REASONING_EFFORT.');
+      if (data?.status === 'incomplete') throw new ApiError('Model nie dokończył odpowiedzi. Zwiększ OPENAI_MAX_OUTPUT_TOKENS lub zmniejsz OPENAI_WRITER_EFFORT albo OPENAI_REASONING_EFFORT.');
       if (data?.status !== 'completed') throw new ApiError('OpenAI nie zwróciło kompletnej odpowiedzi.');
       const blocks = (data.output || []).filter(item => item.type === 'message').flatMap(item => item.content || []);
       if (blocks.some(block => block.type === 'refusal')) throw new ApiError('Model odmówił realizacji tej prośby. Zmień temat lub wskazówki.');

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createAI, DEFAULT_MODEL, integer, ApiError } from './ai.js';
+import { createAI, DEFAULT_MODEL, integer, ApiError, normalizeEffort } from './ai.js';
 import { buildSong, normalizeBrief } from './quality.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -31,13 +31,13 @@ function envString(value) {
 }
 
 export function configFromEnv(env = process.env) {
-  const effortValue = envString(env.OPENAI_REASONING_EFFORT);
-  const effort = ['low', 'medium', 'high', 'xhigh', 'max'].includes(effortValue) ? effortValue : 'high';
+  const effort = normalizeEffort(envString(env.OPENAI_REASONING_EFFORT), 'high');
+  const writerEffort = normalizeEffort(envString(env.OPENAI_WRITER_EFFORT), 'medium');
   const model = envString(env.OPENAI_MODEL);
   return { apiKey: envString(env.OPENAI_API_KEY), password: envString(env.APP_PASSWORD),
     model: model || DEFAULT_MODEL, reviewModel: envString(env.OPENAI_REVIEW_MODEL) || model || DEFAULT_MODEL,
-    maxCalls: integer(envString(env.MAX_AI_CALLS), 7, 3, 9), maxOutputTokens: integer(envString(env.OPENAI_MAX_OUTPUT_TOKENS), 16000, 8000, 64000),
-    timeoutMs: integer(envString(env.OPENAI_TIMEOUT_MS), 600000, 30000, 600000), effort,
+    maxCalls: integer(envString(env.MAX_AI_CALLS), 7, 3, 9), maxOutputTokens: integer(envString(env.OPENAI_MAX_OUTPUT_TOKENS), 64000, 8000, 64000),
+    timeoutMs: integer(envString(env.OPENAI_TIMEOUT_MS), 600000, 30000, 600000), effort, writerEffort,
     inputRate: rate(envString(env.INPUT_USD_PER_M)), outputRate: rate(envString(env.OUTPUT_USD_PER_M)),
     reviewInputRate: rate(envString(env.REVIEW_INPUT_USD_PER_M)), reviewOutputRate: rate(envString(env.REVIEW_OUTPUT_USD_PER_M)) };
 }
