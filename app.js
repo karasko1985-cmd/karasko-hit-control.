@@ -58,9 +58,31 @@ function showList(id, values, empty = 'Brak uwag w tej rundzie.') {
   }));
 }
 
+function packView(data) {
+  const song = data.song || {};
+  const direction = data.direction || {};
+  const pack = data.pack || {};
+  return {
+    title: pack.title || song.title || '',
+    titleLocked: Boolean(pack.titleLocked || data.brief?.title),
+    lyrics: pack.lyrics || song.lyrics || '',
+    style: pack.style || song.style || '',
+    tags: asList(pack.tags || song.tags).map(item => String(item)).filter(Boolean),
+    bpm: pack.bpm ?? direction.bpm ?? '',
+    key: pack.key || song.key || '',
+    beatNotes: pack.beatNotes || song.beatNotes || '',
+    vocalNotes: pack.vocalNotes || song.vocalNotes || '',
+    arrangement: pack.arrangement || song.arrangement || '',
+    checklist: asList(pack.checklist || song.checklist).map(item => String(item)).filter(Boolean)
+  };
+}
+
 function formatSong(data) {
-  const { song } = data;
-  return `KARASKO — ${song.title || 'Bez tytułu'}\n\n${song.concept || ''}\n\n=== LYRICS ===\n${song.lyrics || ''}\n\n=== STYLE ===\n${song.style || ''}\n\n=== EXCLUDE ===\n${song.exclude || ''}\n`;
+  const song = data.song || {};
+  const pack = packView(data);
+  const tempo = [pack.bpm ? `${pack.bpm} BPM` : '', pack.key].filter(Boolean).join(' · ');
+  const locked = pack.titleLocked ? 'Tytuł zablokowany.\n\n' : '';
+  return `KARASKO — ${pack.title || 'Bez tytułu'}\n\n${locked}${song.concept || ''}\n\n=== LYRICS ===\n${pack.lyrics}\n\n=== STYLE ===\n${pack.style}\n\n=== TAGS ===\n${pack.tags.join(', ')}\n\n=== BPM / KEY ===\n${tempo}\n\n=== BEAT ===\n${pack.beatNotes}\n\n=== VOCAL ===\n${pack.vocalNotes}\n\n=== ARRANGEMENT ===\n${pack.arrangement}\n\n=== CHECKLIST ===\n${pack.checklist.map(item => `- ${item}`).join('\n')}\n\n=== EXCLUDE ===\n${song.exclude || ''}\n`;
 }
 
 function render(data) {
@@ -68,8 +90,18 @@ function render(data) {
   const { song, review, usage = {}, revisions = [] } = data;
   $('empty').classList.add('hidden');
   $('output').classList.remove('hidden');
-  $('title').textContent = song.title || 'Bez tytułu';
+  const pack = packView(data);
+  $('title').textContent = pack.title || 'Bez tytułu';
+  $('titleLock').textContent = pack.titleLocked ? `Tytuł zablokowany: ${pack.title}` : '';
+  $('titleLock').classList.toggle('hidden', !pack.titleLocked);
   $('concept').textContent = song.concept || '';
+  $('packStyle').textContent = pack.style || '—';
+  $('packTags').textContent = pack.tags.join(' · ') || '—';
+  $('packTempo').textContent = [pack.bpm ? `${pack.bpm} BPM` : '', pack.key].filter(Boolean).join(' · ') || '—';
+  $('packBeat').textContent = pack.beatNotes || '—';
+  $('packVocal').textContent = pack.vocalNotes || '—';
+  $('packArrangement').textContent = pack.arrangement || '—';
+  showList('packChecklist', pack.checklist, 'Brak checklisty.');
   const direction = data.direction;
   $('direction').classList.toggle('hidden', !direction);
   if (direction) {
@@ -228,7 +260,9 @@ if (pendingJob) resumeJob();
 document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
   if (!current) return;
   try {
-    await navigator.clipboard.writeText(button.dataset.copy === 'combined' ? formatSong(current) : (current.song[button.dataset.copy] || ''));
+    const field = button.dataset.copy;
+    const text = field === 'combined' || field === 'pack' ? formatSong(current) : (current.song[field] || '');
+    await navigator.clipboard.writeText(text);
     const label = button.dataset.label || button.textContent;
     button.dataset.label = label;
     button.textContent = 'Skopiowano ✓';

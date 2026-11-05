@@ -15,15 +15,19 @@
 <main>
   <section class="hero">
     <span class="eyebrow">STUDIO TEKSTÓW · RAP / ELECTRO / RADIO</span>
-    <h1>Mocny tekst.<br><em>Brzmienie z charakterem.</em></h1>
-    <p>Dobierz kierunek, zbuduj refren i dopracuj rymy. AI przygotowuje tekst oraz opis produkcji do Suno, a osobny etap recenzji sprawdza siedem obszarów jakości.</p>
+    <h1>Mocny bit.<br><em>Pełny pakiet do Suno.</em></h1>
+    <p>Tytuł, tekst, linia Style, tagi, tonacja, wokal, beat i aranżacja powstają razem. Domyślnie idzie energia i zaskoczenie. Spokój i neo-soul tylko wtedy, gdy o nie poprosisz.</p>
   </section>
   <div class="layout">
     <section class="panel">
-      <div class="panel-head"><span class="step">01</span><div><h2>Nowy numer</h2><p>Ustaw temat i charakter brzmienia</p></div></div>
+      <div class="panel-head"><span class="step">01</span><div><h2>Nowy numer</h2><p>Tytuł, temat i charakter brzmienia</p></div></div>
       <form id="form" aria-busy="false">
+        <label>Tytuł <span class="muted">(opcjonalnie)</span>
+          <input id="songTitle" name="title" type="text" maxlength="100" autocomplete="off" placeholder="Np. Z blizn robię pancerz">
+        </label>
+        <p class="fine">Jeśli tytuł nie jest pusty, zostaje znak w znak w planie, tekście, poprawkach i recenzji.</p>
         <label class="auto-toggle"><input type="checkbox" name="autoMatch" value="true" checked id="autoMatch"> AI dobiera gatunek, tempo i aranżację</label>
-        <p class="fine">Twój temat i wskazówki obowiązują w obu trybach. Odznacz opcję, aby samodzielnie ustawić gatunek, BPM i klimat.</p>
+        <p class="fine">Temat i wskazówki obowiązują w obu trybach. Domyślnie mocny, zaskakujący bit. Napisz wprost, jeśli chcesz spokój, neo-soul albo balladę. Odznacz opcję, aby samemu ustawić gatunek, BPM i klimat.</p>
         <label>Temat / historia <span class="muted">(opcjonalnie)</span>
           <textarea name="topic" rows="4" maxlength="1000" placeholder="Np. nocny powrót do rodzinnego miasta; konkretne sceny, ironia i mocna puenta."></textarea>
         </label>
@@ -37,21 +41,33 @@
             <label>Klimat<select name="mood"><option>Mocny, wiarygodny, energetyczny</option><option>Uliczny, surowy, bez kompromisów</option><option>Klubowy, euforyczny, ciężki bas</option><option>Emocjonalny, ale bez patosu</option><option>Humorystyczny, z pazurem</option></select></label>
           </div>
         </div>
-        <label>Tryb pracy<select name="mode"><option value="quality" selected>Jakość — więcej pracy nad tekstem i brzmieniem</option><option value="fast">Szybki — krótsza redakcja</option></select></label>
-        <p id="modelInfo" class="fine">Model jest ustawiony na serwerze. Tryb jakości może potrwać kilka minut i zużyć więcej tokenów.</p>
-        <div class="rule"><span>Rymy i rytm</span><span>Refren na początku</span><span>7 ocen redakcyjnych</span><span>Dobór stylu</span></div>
+        <label>Tryb pracy<select name="mode"><option value="quality" selected>Jakość — pełny pakiet i więcej redakcji</option><option value="fast">Szybki — pełny pakiet, krótsza redakcja</option></select></label>
+        <p id="modelInfo" class="fine">Model jest ustawiony na serwerze. Oba tryby oddają pełny pakiet. Jakość może potrwać kilka minut i zużyć więcej tokenów.</p>
+        <div class="rule"><span>Rymy i rytm</span><span>Refren z treścią</span><span>Pełny pakiet</span><span>Tytuł bez zmian</span></div>
         <button id="go" type="submit">✦ NAPISZ I DOPRACUJ NUMER</button>
         <button id="resume" type="button" class="secondary hidden">Sprawdź trwające zadanie</button>
         <p class="fine">Każdy numer korzysta z płatnego API OpenAI. Oceny są orientacyjne; o melodii i finalnym brzmieniu decyduje także generator muzyki i odsłuch.</p>
       </form>
     </section>
     <section class="panel result" aria-label="Wynik i kontrola">
-      <div class="panel-head"><span class="step">02</span><div><h2>Wynik i kontrola</h2><p>Tekst, styl i konkretne uwagi redakcyjne</p></div></div>
-      <div id="empty" class="empty"><div class="disc" aria-hidden="true">♫</div><h3>Tu powstanie Twój numer</h3><p>Podaj własny pomysł albo zostaw wybór AI. W trybie jakości tekst przechodzi dokładniejszą redakcję.</p></div>
+      <div class="panel-head"><span class="step">02</span><div><h2>Wynik i kontrola</h2><p>Pełny pakiet, tekst i uwagi redakcyjne</p></div></div>
+      <div id="empty" class="empty"><div class="disc" aria-hidden="true">♫</div><h3>Tu powstanie Twój numer</h3><p>Wpisz tytuł, jeśli ma zostać bez zmian. W wyniku dostaniesz pełny pakiet dla Suno i zespołu.</p></div>
       <div id="loading" class="hidden busy" role="status" aria-live="polite"><div class="spinner" aria-hidden="true"></div><h3>Tworzenie i redakcja…</h3><p id="progress">Przygotowanie kierunku muzycznego…</p><p class="fine">Możesz zaczekać na tej stronie. Po odświeżeniu tej karty aplikacja sprawdzi trwające zadanie.</p></div>
       <div id="error" class="hidden error" role="alert"></div>
       <div id="output" class="hidden">
-        <div class="result-title"><span class="eyebrow">NOWY UTWÓR</span><h2 id="title"></h2><p id="concept"></p></div>
+        <div class="result-title"><span class="eyebrow">NOWY UTWÓR</span><h2 id="title"></h2><p id="titleLock" class="fine hidden"></p><p id="concept"></p></div>
+        <section id="pack" class="pack" aria-label="Pełny pakiet">
+          <div class="pack-head"><span class="eyebrow">PEŁNY PAKIET</span><button type="button" data-copy="pack">Kopiuj pakiet</button></div>
+          <div class="pack-grid">
+            <article><span>STYLE SUNO</span><p id="packStyle"></p></article>
+            <article><span>TAGI</span><p id="packTags"></p></article>
+            <article><span>BPM / TONACJA</span><p id="packTempo"></p></article>
+            <article><span>BEAT</span><p id="packBeat"></p></article>
+            <article><span>WOKAL</span><p id="packVocal"></p></article>
+            <article><span>ARANŻACJA</span><p id="packArrangement"></p></article>
+          </div>
+          <div class="pack-check"><span>CHECKLIST</span><ul id="packChecklist"></ul></div>
+        </section>
         <div id="direction" class="verdict direction hidden"></div>
         <div id="verdict" class="verdict"></div>
         <p class="fine">Orientacyjna ocena tekstu i opisu stylu · 0–10</p>

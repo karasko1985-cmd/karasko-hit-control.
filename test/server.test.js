@@ -60,6 +60,7 @@ test('HTTP auth, static allowlist, JSON validation, jobs and active generation c
     progress({ stage: 'writing', message: 'Piszę' });
     await blocked;
     assert.equal(payload.topic, 'Stacja');
+    assert.equal(payload.title, 'Z blizn robię pancerz');
     return fakeResult();
   }, async base => {
     assert.equal((await fetch(base + '/')).status, 401);
@@ -74,7 +75,7 @@ test('HTTP auth, static allowlist, JSON validation, jobs and active generation c
     const post = body => fetch(base + '/api/jobs', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body });
     assert.equal((await post('null')).status, 400);
     assert.equal((await post('{broken')).status, 400);
-    const created = await post(JSON.stringify({ topic: 'Stacja' }));
+    const created = await post(JSON.stringify({ topic: 'Stacja', title: 'Z blizn robię pancerz' }));
     assert.equal(created.status, 202);
     const { id } = await created.json();
     assert.match(id, /^[a-f0-9-]{36}$/);
