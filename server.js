@@ -98,7 +98,7 @@ export function createApp({ config = configFromEnv(), aiFactory = createAI, buil
       ai = aiFactory(config);
       job.result = await build(payload, ai, progress => { job.progress = progress; job.updatedAt = Date.now(); });
       job.result.estimatedUsd = estimateCost(job.result, config);
-      job.status = 'completed'; job.progress = { stage: 'completed', message: 'Gotowe. Wybierz Całość, aby skopiować cały numer.' };
+      job.status = 'completed'; job.progress = { stage: 'completed', message: 'Gotowe. Pełny pakiet skopiujesz w Całości.' };
       history.unshift(job.result); if (history.length > 15) history.pop();
     } catch (error) {
       job.status = 'failed'; job.error = scrub(error.message || 'Nie udało się przygotować utworu.', config.apiKey);

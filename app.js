@@ -59,8 +59,31 @@ function showList(id, values, empty = 'Brak uwag w tej rundzie.') {
 }
 
 function formatSong(data) {
-  const { song } = data;
-  return `KARASKO — ${song.title || 'Bez tytułu'}\n\n${song.concept || ''}\n\n=== LYRICS ===\n${song.lyrics || ''}\n\n=== STYLE ===\n${song.style || ''}\n\n=== EXCLUDE ===\n${song.exclude || ''}\n`;
+  const song = data.song || {};
+  const pack = data.pack || {};
+  const tags = (song.styleTags || []).join(', ');
+  const checklist = (song.checklist || []).map(item => `- ${item}`).join('\n');
+  const bpm = pack.bpm || data.direction?.bpm || '';
+  const key = song.key || pack.key || '';
+  return [
+    `KARASKO — ${song.title || 'Bez tytułu'}`, '', song.concept || '', '',
+    '=== LYRICS ===', song.lyrics || '', '',
+    '=== STYLE ===', song.style || '', '',
+    '=== STYLE TAGS ===', tags, '',
+    '=== BPM / KEY ===', `${bpm} BPM · ${key}`.trim(), '',
+    '=== BEAT ===', song.beatNotes || '', '',
+    '=== VOCAL ===', song.vocalNotes || '', '',
+    '=== ARRANGEMENT ===', song.arrangement || '', '',
+    '=== CHECKLIST ===', checklist, '',
+    '=== EXCLUDE ===', song.exclude || '', ''
+  ].join('\n');
+}
+
+function copyField(kind) {
+  if (kind === 'combined') return formatSong(current);
+  if (kind === 'styleTags') return (current.song.styleTags || []).join(', ');
+  const value = current.song[kind];
+  return Array.isArray(value) ? value.join('\n') : (value || '');
 }
 
 function render(data) {
@@ -69,7 +92,32 @@ function render(data) {
   $('empty').classList.add('hidden');
   $('output').classList.remove('hidden');
   $('title').textContent = song.title || 'Bez tytułu';
+  const locked = Boolean(data.brief?.title) && data.brief.title === (song.title || '');
+  $('titleLock').textContent = locked ? `Tytuł zachowany dokładnie: ${song.title}` : '';
+  $('titleLock').classList.toggle('hidden', !locked);
+  $('titleLock').classList.toggle('lock-note', locked);
   $('concept').textContent = song.concept || '';
+  const pack = data.pack || {};
+  const rows = [
+    ['Style (Suno)', song.style],
+    ['Tagi', (song.styleTags || []).join(' · ')],
+    ['BPM / tonacja', `${pack.bpm || data.direction?.bpm || '—'} BPM · ${song.key || '—'}`],
+    ['Beat', song.beatNotes],
+    ['Wokal', song.vocalNotes],
+    ['Aranżacja', song.arrangement],
+    ['Checklista zespołu', (song.checklist || []).map(item => `• ${item}`).join('\n')]
+  ];
+  $('pack').replaceChildren(...rows.map(([label, value]) => {
+    const block = document.createElement('div');
+    block.className = 'pack-row';
+    const heading = document.createElement('h3');
+    heading.textContent = label;
+    const body = document.createElement('p');
+    body.textContent = String(value || '').trim() || '—';
+    block.append(heading, body);
+    return block;
+  }));
+  $('styleTags').textContent = (song.styleTags || []).join(', ');
   const direction = data.direction;
   $('direction').classList.toggle('hidden', !direction);
   if (direction) {
@@ -228,7 +276,7 @@ if (pendingJob) resumeJob();
 document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
   if (!current) return;
   try {
-    await navigator.clipboard.writeText(button.dataset.copy === 'combined' ? formatSong(current) : (current.song[button.dataset.copy] || ''));
+    await navigator.clipboard.writeText(copyField(button.dataset.copy));
     const label = button.dataset.label || button.textContent;
     button.dataset.label = label;
     button.textContent = 'Skopiowano ✓';
