@@ -1,6 +1,6 @@
 # KARASKO HIT CONTROL 2
 
-Polskie teksty z rymami oraz dopasowane instrukcje brzmienia do Suno. Aplikacja tworzy Lyrics, Style i Exclude; gotowe nagranie powstaje w generatorze muzyki.
+Polskie teksty z rymami oraz pełny pakiet do Suno: Lyrics, Style, tagi, BPM, tonacja, beat, wokal, aranżacja i checklista. Gotowe nagranie powstaje w generatorze muzyki.
 
 ## Uruchomienie
 
@@ -14,13 +14,14 @@ W Render użyj instrukcji HOSTING_RENDER.md. Zachowaj klucz w panelu Render; nie
 
 ## Jak działa nowa wersja
 
-- Jeden brief z tematem i preferencjami trafia do producenta, autora i recenzenta. W manualu gatunek, BPM i klimat pozostają stałe.
-- Producent porównuje kierunki, dobiera groove, instrumenty, wokal i kontrast sekcji oraz planuje rodziny rymów.
-- Autor pisze naturalne polskie wersy, słyszalne rymy, pełne refreny i Style pod faktyczny tekst. Refren może zostać przebudowany, jeśli jest słaby.
-- Recenzent sprawdza siedem kategorii, w tym dopasowanie stylu. Musi wskazać cytaty i pary rymów. Niepotwierdzone cytaty nie podnoszą ocen.
+- Jeden brief z tytułem, tematem i preferencjami trafia do producenta, autora i recenzenta. W manualu gatunek, BPM i klimat pozostają stałe. Wpisany tytuł jest zablokowany: plan, tekst, poprawki i recenzja dostają dokładnie ten ciąg znaków.
+- Domyślna energia to mocny, zaskakujący bit. Spokój, neo-soul, lo-fi i ballada wchodzą tylko wtedy, gdy użytkownik o nie poprosi. Gdy gatunek nie jest ustawiony ręcznie, producent opiera się na jednym z trzech wzorców: rap kinowy jak „Z blizn robię pancerz”, hip-hop radiowy około 100 BPM albo boom bap.
+- Producent porównuje kierunki, dobiera groove, instrumenty, wokal, kontrast sekcji oraz moment dropu, stopu albo hooka i planuje rodziny rymów.
+- Autor pisze płynące polskie wersy, rozwijające się rymy i refren złożony ze zdań. Nie skanduje jednego słowa i nie nazywa basu w tekście. Razem z lyrics oddaje Style do Suno, tagi, tonację, beat, wokal, aranżację i krótką checklistę. Refren może zostać przebudowany, jeśli jest słaby.
+- Recenzent sprawdza siedem kategorii, w tym dopasowanie stylu i energii. Musi wskazać cytaty i pary rymów. Niepotwierdzone cytaty nie podnoszą ocen. Puste skandowanie, jednowyrazowy hook, bas w lyrics albo brak pól pakietu blokują próg.
 - W trybie jakości poprawki są porównywane z poprzednią wersją bez ujawniania poprzednich ocen. Kolejność wersji jest losowana. Pogorszenie rymów, flow, języka, hooka lub stylu blokuje wybór, poza priorytetową naprawą kompletności/tempa.
-- W trybie szybkim wykonywane są 3 wywołania; tryb jakości domyślnie do 7 (dwie rundy poprawek i porównań).
-- Zakładka **Całość** pokazuje cały numer w jednym polu. **Kopiuj całość** kopiuje tytuł, koncept, Lyrics, Style i Exclude. Pola Lyrics i Style pozostają dostępne do osobnego wklejenia w Suno.
+- W trybie szybkim wykonywane są 3 wywołania; tryb jakości domyślnie do 7 (dwie rundy poprawek i porównań). Oba tryby zwracają ten sam obiekt `pack`: zablokowany tytuł, lyrics, style, tags, bpm, key, beatNotes, vocalNotes, arrangement i checklist. Szybki nie uruchamia poprawek.
+- Zakładka **Całość** i przycisk **Kopiuj pakiet** zbierają tytuł, koncept, Lyrics, Style, tagi, BPM, tonację, beat, wokal, aranżację, checklistę i Exclude. Pola Lyrics i Style pozostają dostępne do osobnego wklejenia w Suno.
 - Zadania działają w tle, pokazują postęp i można je odebrać po odświeżeniu tej samej karty. Zamknięcie karty nie anuluje już uruchomionych płatnych wywołań.
 
 ## Model i ustawienia

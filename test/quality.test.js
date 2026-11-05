@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CATEGORIES, normalizeBrief, normalizeDirection, normalizeSong, structuralProblems,
-  normalizeReview, chooseCandidate, buildSong
+  normalizeReview, chooseCandidate, buildSong, assemblePack, PRODUCER_RULES, WRITER_RULES, REFERENCE_STYLES
 } from '../quality.js';
 
 const direction = {
@@ -15,7 +15,13 @@ const song = {
   hook: 'Jeszcze stoją nasze bramy',
   lyrics: '[Chorus]\nJeszcze stoją nasze bramy\nTylko my się inaczej znamy\n\n[Verse 1]\nNa podwórku został ślad\nKtoś zamalował stary znak\nPod balkonem czeka brat\nW dłoni trzyma pęknięty hak\n\n[Chorus]\nJeszcze stoją nasze bramy\nTylko my się inaczej znamy\n\n[Verse 2]\nTeraz wolniej mijam blok\nStare drzwi odbiły krok\nKładę torbę obok ściany\nZnowu słyszę głos zza bramy\n\n[Final Chorus]\nJeszcze stoją nasze bramy\nTylko my się inaczej znamy',
   style: 'Polish hip-hop, 96 BPM, dry breakbeat drums, warm bass, restrained piano motif, low male rap, open chorus.',
-  exclude: 'Shouting, distorted vocals'
+  exclude: 'Shouting, distorted vocals',
+  tags: ['Polish hip-hop', 'dry breakbeat', 'low male vocal', 'open chorus'],
+  key: 'A minor',
+  beatNotes: 'Sucha perkusja trzyma sprężysty groove, a ciepły bas zostaje w dole. W refrenie stopa wchodzi gęściej.',
+  vocalNotes: 'Niski męski rap blisko mikrofonu w zwrotce i szerszy, bardziej śpiewany refren bez krzyku.',
+  arrangement: 'Zwrotka trzyma napięcie, przed hookiem krótki stop, potem drop refrenu z szerszą perkusją.',
+  checklist: ['Rymy słychać w parach', 'Hook jest zdaniem, nie skandowaniem', 'Energia rośnie w refrenie', 'Wokal ma kontrast sekcji', 'Aranżacja ma stop przed hookiem']
 };
 const evidence = {
   rhymes: 'bramy', flow: 'Na podwórku został ślad', naturalness: 'Kładę torbę obok ściany',
@@ -37,7 +43,7 @@ test('manual brief keeps topic, preferences, genre, tempo and mood for all stage
   const payload = { autoMatch: false, genre: 'Techno / electro-rap', bpm: '142', mood: 'Euforyczny', topic: 'Nocny powrót', preferences: 'Bez pianina', mode: 'fast' };
   assert.deepEqual(normalizeBrief(payload), {
     autoMatch: false, genre: payload.genre, bpm: 142, mood: payload.mood, topic: payload.topic,
-    preferences: payload.preferences, quality: 'fast'
+    preferences: payload.preferences, title: '', energy: 'energetic', quality: 'fast'
   });
   const brief = normalizeBrief(payload);
   const normalized = normalizeDirection({ ...direction, genre: 'Wrong genre', bpm: 100, topic: 'Wrong topic', mood: 'Wrong mood' }, brief);
@@ -59,10 +65,48 @@ test('automatic brief ignores hidden manual defaults and clamps explicit manual 
 
 test('invalid briefs and malformed model songs are rejected', () => {
   for (const input of [null, [], 'topic', 1]) assert.throws(() => normalizeBrief(input));
-  for (const input of [null, [], { ...song, lyrics: undefined }, { ...song, lyrics: 123 }, { ...song, title: 'x'.repeat(101) }]) {
+  for (const input of [null, [], { ...song, lyrics: undefined }, { ...song, lyrics: 123 }, { ...song, title: 'x'.repeat(101) }, { ...song, tags: 'hip-hop' }, { ...song, checklist: [123] }]) {
     assert.throws(() => normalizeSong(input));
   }
   assert.deepEqual(normalizeSong({ ...song, title: `  ${song.title}  ` }), song);
+});
+
+test('typed title is kept exactly and empty title stays unlocked', () => {
+  const title = 'Z blizn robię pancerz';
+  const brief = normalizeBrief({ title: `  ${title}  ` });
+  assert.equal(brief.title, title);
+  assert.equal(normalizeBrief({ title: '   ' }).title, '');
+  assert.equal(normalizeSong({ ...song, title: 'Inny tytuł modelu' }, brief).title, title);
+  assert.equal(normalizeSong({ ...song, title: 'Inny tytuł modelu' }).title, 'Inny tytuł modelu');
+  const pack = assemblePack(normalizeSong({ ...song, title: 'Inny tytuł modelu' }, brief), direction, brief);
+  assert.equal(pack.title, title);
+  assert.equal(pack.titleLocked, true);
+  assert.equal(assemblePack(song, direction, normalizeBrief({})).titleLocked, false);
+});
+
+test('energy defaults to a strong beat unless the user asks for calm', () => {
+  assert.equal(normalizeBrief({ topic: 'spokojny wieczór na osiedlu' }).energy, 'energetic');
+  assert.equal(normalizeBrief({ preferences: 'chcę neo-soul, spokojnie i wyciszenie' }).energy, 'user-requested-calm');
+  assert.equal(normalizeBrief({ preferences: 'bez neo-soul, mocny bit' }).energy, 'energetic');
+  assert.equal(normalizeBrief({ autoMatch: false, mood: 'Klubowy, euforyczny, ciężki bas' }).energy, 'energetic');
+  assert.match(PRODUCER_RULES, /neo-soul/);
+  assert.match(PRODUCER_RULES, /energetic/);
+  assert.match(WRITER_RULES, /Bas! Bas!/);
+  assert.match(WRITER_RULES, /brief\.title/);
+  assert.deepEqual(REFERENCE_STYLES.map(item => item.id), ['cinematic-rap', 'radio-hip-hop', 'boom-bap']);
+});
+
+test('chants, single-word hooks and bass named in lyrics fail while bass in the beat notes stays allowed', () => {
+  const chant = structuralProblems({ ...song, lyrics: song.lyrics.replace('Jeszcze stoją nasze bramy', 'Bas! Bas!') }, direction);
+  assert.ok(chant.some(issue => /skand/.test(issue)));
+  const bassLyric = structuralProblems({ ...song, lyrics: song.lyrics.replace('Na podwórku został ślad', 'Na podwórku został bas') }, direction);
+  assert.ok(bassLyric.some(issue => /bas/i.test(issue)));
+  const bassInNotes = { ...song, beatNotes: `${song.beatNotes} Ciepły bas zostaje w aranżacji.` };
+  assert.deepEqual(structuralProblems(bassInNotes, direction), []);
+  const singleWord = song.lyrics.replace(/Jeszcze stoją nasze bramy/g, 'Hej').replace(/Tylko my się inaczej znamy/g, 'Hej');
+  const hook = structuralProblems({ ...song, lyrics: singleWord, hook: 'Hej' }, direction);
+  assert.ok(hook.some(issue => /jednym powtórzonym słowem/.test(issue)));
+  assert.ok(structuralProblems({ ...song, tags: ['rap'], checklist: ['za krótko'] }, direction).some(issue => /tagów|Checklist/.test(issue)));
 });
 
 test('malformed directions and invalid tempo are rejected before writing', () => {
@@ -195,6 +239,38 @@ test('pipeline reserves revision and comparison calls, keeps exactly one final s
     assert.equal(result.selectedIteration, maxCalls >= 5 ? 2 : 1);
     assert.equal(result.song.title, maxCalls >= 5 ? 'Poprawiony numer' : song.title);
   }
+});
+
+test('a typed title stays locked through plan, write, revise and review, and every result carries the pack', async () => {
+  const title = 'Z blizn robię pancerz';
+  const fastAI = scriptedAI(7);
+  const fast = await buildSong({ mode: 'fast', title, topic: 'Blizny' }, fastAI);
+  assert.equal(fastAI.usage.calls, 3);
+  assert.equal(fast.song.title, title);
+  assert.equal(fast.pack.title, title);
+  assert.equal(fast.pack.titleLocked, true);
+  assert.equal(fast.pack.bpm, direction.bpm);
+  assert.deepEqual(Object.keys(fast.pack), ['title', 'titleLocked', 'lyrics', 'style', 'tags', 'bpm', 'key', 'beatNotes', 'vocalNotes', 'arrangement', 'checklist']);
+  for (const key of ['lyrics', 'style', 'key', 'beatNotes', 'vocalNotes', 'arrangement']) assert.ok(fast.pack[key]);
+  assert.ok(fast.pack.tags.length >= 3);
+  assert.ok(fast.pack.checklist.length >= 4);
+  assert.equal(fastAI.inputs[0].input.brief.title, title);
+  assert.equal(fastAI.inputs[0].input.brief.energy, 'energetic');
+  assert.deepEqual(fastAI.inputs.map(item => item.input.referenceStyles), [REFERENCE_STYLES, REFERENCE_STYLES, REFERENCE_STYLES]);
+  const qualityAI = scriptedAI(7, { revise: true });
+  const quality = await buildSong({ title, mode: 'quality' }, qualityAI);
+  assert.equal(quality.song.title, title);
+  assert.equal(quality.pack.titleLocked, true);
+  const seen = [];
+  for (const call of qualityAI.inputs) {
+    if (call.input.song) seen.push(call.input.song.title);
+    for (const side of ['A', 'B']) if (call.input[side]?.title) seen.push(call.input[side].title);
+  }
+  assert.ok(seen.length >= 3);
+  assert.ok(seen.every(value => value === title));
+  const unlocked = await buildSong({ mode: 'fast' }, scriptedAI(7));
+  assert.equal(unlocked.pack.titleLocked, false);
+  assert.equal(unlocked.pack.title, song.title);
 });
 
 test('fast mode skips revisions and a failed revision preserves an assessed complete song', async () => {
