@@ -14,13 +14,16 @@ W Render użyj instrukcji HOSTING_RENDER.md. Zachowaj klucz w panelu Render; nie
 
 ## Jak działa nowa wersja
 
+- Pole **Tytuł** jest opcjonalne. Gdy jest wpisane, każdy etap (plan, tekst, poprawka, recenzja) dostaje instrukcję `TITLE IS LOCKED: use exactly …`, a serwer i tak nadpisuje pole tytułu tą wartością.
+- Domyślna energia to mocny, zaskakujący beat. Spokojny neo-soul, lo-fi albo senna ballada wchodzą tylko wtedy, gdy preferencje albo klimat wprost o nie proszą. Gdy pasuje temat, produkcja może oprzeć się na jednym modelu KARASKO: „Z blizn robię pancerz”, „Jakie masz myśli” albo „Dobry chłopak”.
+- Każdy numer, także w trybie szybkim, wraca jako pełny pakiet: tytuł, tekst ze znacznikami, linia Style pod Suno, tagi, BPM i tonacja, notatki beatu, notatki wokalu, aranżacja Drop/Stop/Hook oraz krótka checklista zespołu. Tryb szybki to nadal 3 wywołania. Tryb pełnego pakietu to dotychczasowy tryb jakości, do 7 wywołań.
 - Jeden brief z tematem i preferencjami trafia do producenta, autora i recenzenta. W manualu gatunek, BPM i klimat pozostają stałe.
 - Producent porównuje kierunki, dobiera groove, instrumenty, wokal i kontrast sekcji oraz planuje rodziny rymów.
 - Autor pisze naturalne polskie wersy, słyszalne rymy, pełne refreny i Style pod faktyczny tekst. Refren może zostać przebudowany, jeśli jest słaby.
 - Recenzent sprawdza siedem kategorii, w tym dopasowanie stylu. Musi wskazać cytaty i pary rymów. Niepotwierdzone cytaty nie podnoszą ocen.
 - W trybie jakości poprawki są porównywane z poprzednią wersją bez ujawniania poprzednich ocen. Kolejność wersji jest losowana. Pogorszenie rymów, flow, języka, hooka lub stylu blokuje wybór, poza priorytetową naprawą kompletności/tempa.
 - W trybie szybkim wykonywane są 3 wywołania; tryb jakości domyślnie do 7 (dwie rundy poprawek i porównań).
-- Zakładka **Całość** pokazuje cały numer w jednym polu. **Kopiuj całość** kopiuje tytuł, koncept, Lyrics, Style i Exclude. Pola Lyrics i Style pozostają dostępne do osobnego wklejenia w Suno.
+- Zakładka **Całość** pokazuje cały pakiet w jednym polu. **Kopiuj całość** kopiuje tytuł, koncept, Lyrics, Style, tagi, BPM i tonację, beat, wokal, aranżację, checklistę i Exclude. Nad zakładkami widać ten sam pakiet w osobnych blokach. Pola Lyrics, Style i tagi pozostają dostępne do osobnego wklejenia w Suno.
 - Zadania działają w tle, pokazują postęp i można je odebrać po odświeżeniu tej samej karty. Zamknięcie karty nie anuluje już uruchomionych płatnych wywołań.
 
 ## Model i ustawienia

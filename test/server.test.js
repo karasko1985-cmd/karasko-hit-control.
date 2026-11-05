@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import fs from 'node:fs';
 import { once } from 'node:events';
 import { createApp, configFromEnv } from '../server.js';
 
@@ -14,6 +15,15 @@ async function withServer(config, build, fn) {
 const config = configFromEnv({ OPENAI_API_KEY: 'offline-test-placeholder', APP_PASSWORD: 'local-test' });
 const auth = { Authorization: `Basic ${Buffer.from('user:local-test').toString('base64')}` };
 const fakeResult = () => ({ song: { title: 'Numer' }, review: { scores: {} }, createdAt: new Date().toISOString(), usage: { byModel: {} } });
+
+test('single-file bundle contains the title lock and the full pack', () => {
+  const bundle = fs.readFileSync(new URL('../KARASKO-ALL-IN-ONE.cjs', import.meta.url), 'utf8');
+  assert.match(bundle, /TITLE IS LOCKED: use exactly/);
+  assert.match(bundle, /styleTags/);
+  assert.match(bundle, /titleInput/);
+  assert.match(bundle, /Pełny pakiet zespołu/);
+  assert.match(bundle, /beatNotes/);
+});
 
 test('config rejects invalid numerical values and respects model override', () => {
   const cfg = configFromEnv({ MAX_AI_CALLS: 'NaN', OPENAI_MAX_OUTPUT_TOKENS: 'oops', OPENAI_MODEL: 'gpt-5.4' });
